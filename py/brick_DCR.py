@@ -4,6 +4,7 @@ from astropy.time import Time
 from astropy.table import Table, vstack
 from astropy import units as u
 from astrometry.util.fits import os, fits_table
+import sys
 
 
 # DCR_AMPLITUDES = {'r': 2.61, 'g': 40.06} # from Bernstein et. al.
@@ -148,7 +149,7 @@ def create_brick_corrected_data(filename, corr_dir, old_dir):
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
         brickDCR.apply_correction()
     except ValueError:
-        continue
+        pass
 
     temp_psf = np.flatnonzero(brickDCR.psf_filt)
 
@@ -257,13 +258,18 @@ def create_gaia_tractor(new_dir, old_dir, cont=True):
 
     
 if __name__ == "__main__":
-    corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'
-    old_dir = '/pscratch/sd/d/dstn/forced-motions-3/'
-    # tractor_filename = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/gaia-tractor.fits'
-    tractor_filename = '/pscratch/sd/d/dstn/forced-motions-3/gaia-cat-all.fits'
+    if len(sys.argv) != 4:
+        print("NO")
+    filename, corr_dir, old_dir = sys.argv[1:]
+    create_brick_corrected_data(filename, corr_dir, old_dir)
     
-    # print("correcting gaia stars...")
-    # create_corrected_gaia(corr_dir, old_dir, tractor_filename)
+#     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'
+#     old_dir = '/pscratch/sd/d/dstn/forced-motions-3/'
+#     # tractor_filename = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/gaia-tractor.fits'
+#     tractor_filename = '/pscratch/sd/d/dstn/forced-motions-3/gaia-cat-all.fits'
     
-    print("correcting forced data...")
-    create_corrected_data(corr_dir, old_dir)
+#     # print("correcting gaia stars...")
+#     # create_corrected_gaia(corr_dir, old_dir, tractor_filename)
+    
+#     print("correcting forced data...")
+#     create_corrected_data(corr_dir, old_dir)

@@ -2,6 +2,7 @@ import numpy as np
 from astrometry.util.fits import *
 from astropy.io import fits
 from scipy.interpolate import RectBivariateSpline
+import sys
 
 
 BINNING = 16
@@ -97,6 +98,7 @@ def make_splines(lateralmaps):
 
 
 def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks):
+    f = os.path.join(old_dir, filename)
     forced_table = fits.open(f)
     corr_table = forced_table.copy()
     ccdnames = np.unique(corr_table[1].data.ccdname)
@@ -151,6 +153,15 @@ def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
         create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
 
 
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print("NO")
+    filename, corr_dir, old_dir, tractor_dir = sys.argv[1:]
+    lmaps = get_lateralmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/lm-corrected-forced-motions/' + 'lateralmaps.fits')
+    tweaks = make_splines(lmaps)
+    create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
+    
+    
 # def main():  
 #     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/'
 #     old_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'

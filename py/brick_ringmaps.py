@@ -2,6 +2,7 @@ import numpy as np
 from astrometry.util.fits import *
 from astropy.io import fits
 from scipy.interpolate import RectBivariateSpline
+import sys
 
 
 BINNING = 16
@@ -137,14 +138,22 @@ def create_corrected_data(corr_dir, old_dir, tweaks, cont=False):
         create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
 
 
-def main():  
-    corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/'
-    old_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("NO")
+    filename, corr_dir, old_dir = sys.argv[1:]
+    rmaps = get_ringmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/' + 'ringmaps.fits')
+    tweaks = make_splines(rmaps)
+    create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
+    
+# def main():  
+#     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/'
+#     old_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'
 
-    fn = 'ringmaps.fits'
-    G = ringmaps.get_gaia_data(old_dir)
-    ringmaps.make_ringmaps(G, corr_dir + fn)
-    rmaps = ringmaps.get_ringmaps(corr_dir + fn)
-    tweaks = ringmaps.make_splines(rmaps)
+#     fn = 'ringmaps.fits'
+#     G = ringmaps.get_gaia_data(old_dir)
+#     ringmaps.make_ringmaps(G, corr_dir + fn)
+#     rmaps = ringmaps.get_ringmaps(corr_dir + fn)
+#     tweaks = ringmaps.make_splines(rmaps)
 
-    ringmaps.create_corrected_data(corr_dir, old_dir, tweaks, cont=True)
+#     ringmaps.create_corrected_data(corr_dir, old_dir, tweaks, cont=True)

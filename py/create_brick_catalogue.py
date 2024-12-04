@@ -4,7 +4,8 @@ from astropy.time import Time
 from astropy.table import Table, vstack
 from astropy import units as u
 from astrometry.util.fits import os, fits_table
-from legacypipe.py.legacypipe.survey import radec_at_mjd, mjd_to_year
+from legacypipe.survey import radec_at_mjd, mjd_to_year
+import sys
 
 DAYSPERYEAR = 365.2425
 
@@ -183,3 +184,10 @@ def create_catalogues(new_dir, old_dir, tractor_dir, cont=True):
         print(filename[-13:])
         
         return create_brick_catalogue(filename, new_dir, old_dir, tractor_dir)
+
+    
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print(sys.argv)
+    filename, new_dir, old_dir, tractor_dir = sys.argv[1:]
+    create_brick_catalogue(filename, new_dir, old_dir, tractor_dir)
