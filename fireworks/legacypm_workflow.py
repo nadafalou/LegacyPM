@@ -6,25 +6,30 @@ launchpad = LaunchPad(host='mongodb05.nersc.gov', username='legacypm_admin', nam
 # launchpad.reset('2024-11-28')
 
 def create_firework(script_file, parameters, fw_name, parents):
-    script_directory = "../../py/"
+    script_directory = "../../py_files/"
     task = ScriptTask(
         script=f"python {script_directory + script_file} " + parameters
     )
     return Firework(task, name=fw_name, parents=parents)
 
 brick_file = "./brick_list.txt"
+# base_dirs = {
+#     "new_dir": "/pscratch/sd/n/nelfalou/fw-test/", 
+#     "old_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/",
+#     "tractor_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/"  
+# }
 base_dirs = {
-    "new_dir": "/pscratch/sd/n/nelfalou/fw-test/", 
-    "old_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/",
-    "tractor_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/"
-    
+    "new_dir": "/pscratch/sd/n/nelfalou/legacypm-catalogue/020/", 
+    "old_dir": "/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/020/",
+    "tractor_dir": "/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/020/"  
 }
-forced_base = "forced-brickwise-{}.fits"
+
+forced_base = "forced-{}.fits"
 tractor_base = "tractor-forced-{}.fits"
 
-# with open(brick_file, 'r') as f:
-#     bricks = [line.strip() for line in f]
-bricks = ["0292p045"]
+with open(brick_file, 'r') as f:
+    bricks = [line.strip() for line in f]
+# bricks = ["0292p045"]
 
 # create Fireworks for each step
 fireworks = []
