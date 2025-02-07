@@ -1,6 +1,7 @@
 fireworks/launcher*
 fireworks/my_launchpad.yaml
-
+fireworks/*.out
+fireworks/*.err
 
 
 
