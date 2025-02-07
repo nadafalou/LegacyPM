@@ -13,5 +13,5 @@
 module load shifter
 
 # Run the Docker image using Shifter
-shifter --image=docker:nadafalou/legacypm:3 python legacypm_workflow.py
+shifter --image=docker:nadafalou/legacypm:4 python legacypm_workflow.py
 
