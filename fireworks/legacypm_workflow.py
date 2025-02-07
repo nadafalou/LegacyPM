@@ -1,9 +1,9 @@
 from fireworks import Firework, Workflow, LaunchPad, ScriptTask
 from fireworks.core.rocket_launcher import rapidfire
-
+from os import listdir
 
 launchpad = LaunchPad(host='mongodb05.nersc.gov', username='legacypm_admin', name='legacypm', password='legacypm')
-# launchpad.reset('2024-11-28')
+# launchpad.reset('2025-01-22')
 
 def create_firework(script_file, parameters, fw_name, parents):
     script_directory = "../../py_files/"
@@ -12,23 +12,31 @@ def create_firework(script_file, parameters, fw_name, parents):
     )
     return Firework(task, name=fw_name, parents=parents)
 
-brick_file = "./brick_list.txt"
+# brick_file = "./brick_list.txt"
+degree = "023"
+
 # base_dirs = {
 #     "new_dir": "/pscratch/sd/n/nelfalou/fw-test/", 
 #     "old_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/",
 #     "tractor_dir": "/pscratch/sd/d/dstn/forced-nomovegaia/"  
 # }
 base_dirs = {
-    "new_dir": "/pscratch/sd/n/nelfalou/legacypm-catalogue/020/", 
-    "old_dir": "/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/020/",
-    "tractor_dir": "/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/020/"  
+    "new_dir": f"/pscratch/sd/n/nelfalou/legacypm-catalogue/{ degree }/", 
+    "old_dir": f"/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/{ degree }/",
+    "tractor_dir": f"/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/{ degree }/"  
 }
 
 forced_base = "forced-{}.fits"
 tractor_base = "tractor-forced-{}.fits"
 
-with open(brick_file, 'r') as f:
-    bricks = [line.strip() for line in f]
+# with open(brick_file, 'r') as f:
+#     bricks = [line.strip() for line in f]
+old_files = listdir(base_dirs["old_dir"])
+finished_files = listdir(base_dirs["new_dir"])
+bricks = []
+for file in old_files:
+    if file[0] == f and file not in finished files:
+        bricks.append(file[-13:-5])
 # bricks = ["0292p045"]
 
 # create Fireworks for each step
@@ -66,7 +74,7 @@ for brick in bricks:
     
     fireworks.extend([dcr_fw, ringmaps_fw, lateralmaps_fw, catalog_fw])
 
-workflow = Workflow(fireworks)
+workflow = Workflow(fireworks, name=f"degree { degree }")
 launchpad.add_wf(workflow)
 rapidfire(launchpad)
 
