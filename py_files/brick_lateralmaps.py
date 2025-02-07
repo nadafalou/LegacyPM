@@ -124,7 +124,8 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks
                                 * np.isin(corr_table[1].data.filter, filt)
                                 * (corr_table[1].data.full_fit_dra_ivar > 1e4)
                                 * (corr_table[1].data.full_fit_dra != 0.)
-                                * (corr_table[1].data.dqmask == 0))
+                                * (corr_table[1].data.dqmask == 0)
+                                * (np.inverse(np.isinf(dc)))
 
             spline = tweaks[(ccdname, filt)]
             xpos = corr_table[1].data.rm_full_fit_x[J]

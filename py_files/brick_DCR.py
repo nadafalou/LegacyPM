@@ -129,6 +129,7 @@ class BrickDCR:
     def apply_correction(self):
         vectorized_mapping = np.vectorize(self._map_char_to_value)
 
+        print(len(self.forced))
         ampl = vectorized_mapping(DCR_AMPLITUDES, np.array(self.forced.filter, dtype=str))
 
         corr_dp1 = ampl * self.colour * np.sqrt(self.airmass**2 - 1) / 262 # mas to pixels
@@ -141,6 +142,13 @@ class BrickDCR:
         self.dcr_full_fit_dra = self.forced.full_fit_dra - dRA
         self.dcr_full_fit_ddec = self.forced.full_fit_ddec - dDEC
         self.colour_airmass = self.colour * np.sqrt(self.airmass**2 - 1) / 262
+
+    def no_dcr(self):
+        self.dcr_full_fit_x = self.forced.full_fit_x
+        self.dcr_full_fit_y = self.forced.full_fit_y 
+        self.dcr_full_fit_dra = self.forced.full_fit_dra 
+        self.dcr_full_fit_ddec = self.forced.full_fit_ddec 
+        self.colour_airmass = np.zeros(len(self.dcr_full_fit_ddec))
         
     
 def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
@@ -150,9 +158,12 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     
     if gaia:
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/gaia-tractor-" + filename[-8:], forced_table=True)
-        brickDCR.apply_correction()
     else:
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
+        
+    if len(self.forced.filter) == 0:
+        brickDCR.no_dcr()
+    else:
         brickDCR.apply_correction()
     # except ValueError:
     #     print("VALUE ERROR - DCR DID NOT WORK")
