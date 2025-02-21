@@ -152,6 +152,7 @@ class BrickDCR:
         
     
 def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
+    print("M1")
     f = os.path.join(old_dir, filename)
     forced_table = fits.open(f)
     corr_table = forced_table.copy()
@@ -160,8 +161,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/gaia-tractor-" + filename[-8:], forced_table=True)
     else:
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
+
+    print("M2")
         
-    if len(self.forced.filter) == 0:
+    if sum(forced_table[1].data.filter == 'i') == 0:
         brickDCR.no_dcr()
     else:
         brickDCR.apply_correction()
@@ -170,6 +173,7 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     #     pass
 
     temp_psf = np.flatnonzero(brickDCR.psf_filt)
+    print("M3")
 
     dcr_full_fit_x = (corr_table[1].data.full_fit_x).copy()
     dcr_full_fit_x[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_x
@@ -183,6 +187,7 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     dp1[temp_psf[brickDCR.filt]] = brickDCR.dp1
     colour_airmass = np.zeros(len(corr_table[1].data))
     colour_airmass[temp_psf[brickDCR.filt]] = brickDCR.colour_airmass
+    print("M4")
 
     corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
     corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
@@ -196,6 +201,7 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     corr_table[1].data.dcr_full_fit_ddec = dcr_full_fit_ddec
     corr_table[1].data.dp1 = dp1
     corr_table[1].data.colour_airmass = colour_airmass
+    print("M4")
   
     corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
     
@@ -218,40 +224,6 @@ def create_corrected_gaia(corr_dir, old_dir, cont=True):
         print(filename)
         
         create_brick_corrected_data(filename, corr_dir, old_dir, gaia=True)
-
-#         forced_table = fits.open(f)
-#         corr_table = forced_table.copy()
-
-#         brickDCR = BrickDCR(corr_table[1].data, tractor_file, forced_table=True)
-#         brickDCR.apply_correction()
-        
-#         # print("back to create_corrected_gaia")
-
-#         # print("got ddec and dra")
-#         # corr_table = brickDCR.forced.copy()
-#         temp_psf = np.flatnonzero(brickDCR.psf_filt)
-        
-#         # TODO edit to make consistent. Either table['column_name'] or table.column_name
-#         dcr_full_fit_x = corr_table[1].data.full_fit_x.copy()
-#         dcr_full_fit_x[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_x
-#         dcr_full_fit_y = corr_table[1].data.full_fit_y.copy()
-#         dcr_full_fit_y[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_y
-#         dcr_full_fit_dra = (corr_table[1].data.full_fit_dra).copy()
-#         dcr_full_fit_dra[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_dra
-#         dcr_full_fit_ddec = (corr_table[1].data.full_fit_ddec).copy()
-#         dcr_full_fit_ddec[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_ddec
-
-#         corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-#         corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-#         corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-#         corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-#         corr_table[1].data["dcr_full_fit_x"] = dcr_full_fit_x
-#         corr_table[1].data["dcr_full_fit_y"] = dcr_full_fit_y
-#         corr_table[1].data["dcr_full_fit_dra"] = dcr_full_fit_dra
-#         corr_table[1].data["dcr_full_fit_ddec"] = dcr_full_fit_ddec
-        
-#         corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
-#         forced_table.close()
 
     
 def create_gaia_tractor(new_dir, old_dir, cont=True):
@@ -278,9 +250,12 @@ def create_gaia_tractor(new_dir, old_dir, cont=True):
 
     
 if __name__ == "__main__":
+    print("are you evenn doing anything?")
     if len(sys.argv) != 4:
         print("NO")
+    print("getting the args...")
     filename, corr_dir, old_dir = sys.argv[1:]
+    print("calling the function...")
     create_brick_corrected_data(filename, corr_dir, old_dir)
     
 #     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/dcr-corrected-forced-motions/'
