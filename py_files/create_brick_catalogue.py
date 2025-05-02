@@ -6,6 +6,14 @@ from astropy import units as u
 from astrometry.util.fits import os, fits_table
 from legacypipe.survey import radec_at_mjd, mjd_to_year
 import sys
+import logging
+import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 DAYSPERYEAR = 365.2425
 
@@ -84,10 +92,17 @@ def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=Fa
     
     
 def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_data=False):
-    f = os.path.join(old_dir, filename)
-    forced_table = fits.open(f)
-    tractor_table = fits.open(tractor_dir + "tractor-forced-" + f[-13:])
-    pm_table = tractor_table.copy()
+    logger.info(f"Starting PM catalogue generation for brick: {filename}")
+    start_time = time.time()
+
+    try:
+        f = os.path.join(old_dir, filename)
+        forced_table = fits.open(f)
+        tractor_table = fits.open(tractor_dir + "tractor-forced-" + f[-13:])
+        pm_table = tractor_table.copy()
+    except Exception as e:
+        logger.error(f"Failed to open FITS files for {filename}: {e}")
+        return []
 
     pmra_plx = np.zeros(len(tractor_table[1].data))
     pmra_plx_ivar = np.zeros(len(tractor_table[1].data))
@@ -125,7 +140,16 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     fails = []
 
     for i, objid in zip(J, tractor_table[1].data.objid[J]):
-        X_plx, variances_plx, X, variances, rmjd = calculate_pm(forced_table[1].data, tractor_table[1].data, objid, dra_error, ddec_error, original_data)
+        try:
+            X_plx, var_plx, X, var, rmjd = calculate_pm(
+                forced_table[1].data, tractor_table[1].data, objid, dra_error, ddec_error, original_data
+            )
+        except Exception as e:
+            logger.warning(f"Error calculating PM for objid={objid}: {e}")
+            fails.append(objid)
+            pm_flag[i] = 0
+            continue
+            
         if X_plx is None:
             pm_flag[i] = 0
             dat = forced_table[1].data.full_fit_dra[forced_table[1].data.objid == objid]
@@ -175,10 +199,14 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
 
     print("done! now writing to file...")
 
-    if original_data:
-        pm_table.writeto(f"{ new_dir }tractor-original-pm-{ filename[-13:] }", overwrite=True)
-    else:
-        pm_table.writeto(f"{ new_dir }tractor-pm-{ filename[-13:] }", overwrite=True)
+    output_path = f"{new_dir}tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
+    try:
+        pm_table.writeto(output_path, overwrite=True)
+        logger.info(f"Saved PM catalogue to: {output_path}")
+    except Exception as e:
+        logger.error(f"Error writing PM file: {e}")
+
+    logger.info(f"Finished PM for {filename} in {time.time() - start_time:.2f} sec, failed on {len(fails)} object(s).")
     return fails
     
     
@@ -196,6 +224,9 @@ def create_catalogues(new_dir, old_dir, tractor_dir, original_data=False, cont=T
     
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print(sys.argv)
+        logger.error("Usage: <filename> <new_dir> <old_dir> <tractor_dir>")
+        sys.exit(1)
+
     filename, new_dir, old_dir, tractor_dir = sys.argv[1:]
+    logger.info(f"Running create_brick_catalogue for {filename}")
     create_brick_catalogue(filename, new_dir, old_dir, tractor_dir)

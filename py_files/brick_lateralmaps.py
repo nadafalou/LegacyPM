@@ -3,7 +3,14 @@ from astrometry.util.fits import *
 from astropy.io import fits
 from scipy.interpolate import RectBivariateSpline
 import sys
+import logging
+import time
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 BINNING = 16
 BY = int(4096 // BINNING)
@@ -98,49 +105,68 @@ def make_splines(lateralmaps):
 
 
 def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks):
-    f = os.path.join(old_dir, filename)
-    forced_table = fits.open(f)
-    corr_table = forced_table.copy()
-    ccdnames = np.unique(corr_table[1].data.ccdname)
-    t = fits_table(tractor_dir + "/tractor-forced-" + filename[-13:])
+    logger.info(f"Starting correction for brick: {filename}")
+    start_time = time.time()
+    
+    try:
+        f = os.path.join(old_dir, filename)
+        forced_table = fits.open(f)
+        corr_table = forced_table.copy()
+        logger.debug(f"Loaded FITS from {f}")
+    except Exception as e:
+        logger.error(f"Failed to load FITS for {filename}: {e}")
+        return
+        
+    try:
+        ccdnames = np.unique(corr_table[1].data.ccdname)
+        t = fits_table(tractor_dir + "/tractor-forced-" + filename[-13:])
+    
+        t.color = -2.5 * (np.log10(t.flux_g / t.flux_i))
+        oidmap = dict([((b,o),i) for i,(b,o) in enumerate(zip(t.brickid, t.objid))])
+        t_index = np.array([oidmap.get((b,o), -1) for b,o in zip(forced_table[1].data.brickid, forced_table[1].data.objid)])
+        dc = t.color[t_index]
+    
+        corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+        corr_table[1].data["lm_full_fit_x"] = (corr_table[1].data.dcr_full_fit_x).copy()
+        corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+        corr_table[1].data["lm_full_fit_y"] = (corr_table[1].data.dcr_full_fit_y).copy()
+        corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+        corr_table[1].data["lm_full_fit_dra"] = (corr_table[1].data.dcr_full_fit_dra).copy()
+        corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+        corr_table[1].data["lm_full_fit_ddec"] = (corr_table[1].data.dcr_full_fit_ddec).copy()
 
-    t.color = -2.5 * (np.log10(t.flux_g / t.flux_i))
-    oidmap = dict([((b,o),i) for i,(b,o) in enumerate(zip(t.brickid, t.objid))])
-    t_index = np.array([oidmap.get((b,o), -1) for b,o in zip(forced_table[1].data.brickid, forced_table[1].data.objid)])
-    dc = t.color[t_index]
-
-    corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-    corr_table[1].data["lm_full_fit_x"] = (corr_table[1].data.dcr_full_fit_x).copy()
-    corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-    corr_table[1].data["lm_full_fit_y"] = (corr_table[1].data.dcr_full_fit_y).copy()
-    corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-    corr_table[1].data["lm_full_fit_dra"] = (corr_table[1].data.dcr_full_fit_dra).copy()
-    corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-    corr_table[1].data["lm_full_fit_ddec"] = (corr_table[1].data.dcr_full_fit_ddec).copy()
-
-    for ccdname in ccdnames:
-        for filt in ['g','r','i','z']:
-            J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
-                                * np.isin(corr_table[1].data.filter, filt)
-                                * (corr_table[1].data.full_fit_dra_ivar > 1e4)
-                                * (corr_table[1].data.full_fit_dra != 0.)
-                                * (corr_table[1].data.dqmask == 0)
-                                * (np.inverse(np.isinf(dc))))
-
-            spline = tweaks[(ccdname, filt)]
-            xpos = corr_table[1].data.rm_full_fit_x[J]
-            ypos = corr_table[1].data.rm_full_fit_y[J]
-
-            xpos, ypos = xpos - spline[0](xpos, ypos, grid=False) * (dc[J] - median_color), ypos - spline[1](xpos, ypos, grid=False) * (dc[J] - median_color)
-
-            dDEC = -0.262 * (xpos - corr_table[1].data.rm_full_fit_x[J]) # bc Dustin said so
-            dRA = +0.262 * (ypos - corr_table[1].data.rm_full_fit_y[J])
-
-            corr_table[1].data["lm_full_fit_x"][J] = xpos
-            corr_table[1].data["lm_full_fit_y"][J] = ypos
-            corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
-            corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
-    corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
+        logger.info(f"Applying lateral map corrections for CCDs in {filename}")
+        for ccdname in ccdnames:
+            for filt in ['g','r','i','z']:
+                J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
+                                    * np.isin(corr_table[1].data.filter, filt)
+                                    * (corr_table[1].data.full_fit_dra_ivar > 1e4)
+                                    * (corr_table[1].data.full_fit_dra != 0.)
+                                    * (corr_table[1].data.dqmask == 0)
+                                    * (np.invert(np.isinf(dc))))
+    
+                spline = tweaks[(ccdname, filt)]
+                if spline is None:
+                    logger.warning(f"No spline found for {ccdname}-{filt}")
+                    continue
+                xpos = corr_table[1].data.rm_full_fit_x[J]
+                ypos = corr_table[1].data.rm_full_fit_y[J]
+    
+                xpos, ypos = xpos - spline[0](xpos, ypos, grid=False) * (dc[J] - median_color), ypos - spline[1](xpos, ypos, grid=False) * (dc[J] - median_color)
+    
+                dDEC = -0.262 * (xpos - corr_table[1].data.rm_full_fit_x[J]) # bc Dustin said so
+                dRA = +0.262 * (ypos - corr_table[1].data.rm_full_fit_y[J])
+    
+                corr_table[1].data["lm_full_fit_x"][J] = xpos
+                corr_table[1].data["lm_full_fit_y"][J] = ypos
+                corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
+                corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
+                
+        corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
+        elapsed = time.time() - start_time
+        logger.info(f"Finished brick {filename} in {elapsed:.2f} seconds")
+    except Exception as e:
+        logger.error(f"Error processing brick {filename}: {e}")
 
     
 def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
@@ -155,13 +181,19 @@ def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
 
 
 if __name__ == "__main__":
+    if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("NO")
+        logger.error("Invalid arguments. Expected usage: <filename> <corr_dir> <old_dir> <tractor_dir>")
+        sys.exit(1)
+
     filename, corr_dir, old_dir, tractor_dir = sys.argv[1:]
-    lmaps = get_lateralmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/lm-corrected-forced-motions/' + 'lateralmaps.fits')
-    tweaks = make_splines(lmaps)
-    create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
-    
+    logger.info(f"Main execution started for {filename}")
+    try:
+        lmaps = get_lateralmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/lm-corrected-forced-motions/' + 'lateralmaps.fits')
+        tweaks = make_splines(lmaps)
+        create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
+    except Exception as e:
+        logger.error(f"Fatal error in main: {e}")
     
 # def main():  
 #     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/'
