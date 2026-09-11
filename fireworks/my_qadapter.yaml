@@ -1,0 +1,15 @@
+_fw_name: CommonAdapter
+_fw_q_type: SLURM
+rocket_launch: shifter --image=docker:nadafalou/legacypm:5 rlaunch singlerun
+
+nodes: 1
+ntasks: 1
+cpus_per_task: 1
+qos: regular
+constraint: cpu
+
+account: desi
+walltime: '00:45:00'
+job_name: legacypm
+
+logdir: /pscratch/sd/n/nelfalou/legacypm-catalogue/fw_logs/

@@ -181,7 +181,6 @@ def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
 
 
 if __name__ == "__main__":
-    if __name__ == "__main__":
     if len(sys.argv) != 5:
         logger.error("Invalid arguments. Expected usage: <filename> <corr_dir> <old_dir> <tractor_dir>")
         sys.exit(1)
