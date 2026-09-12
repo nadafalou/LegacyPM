@@ -46,6 +46,13 @@ MIN_EPOCHS = 5
 MIN_BASELINE_DAYS = 180
 MAX_COND_NUMBER = 1e8
 
+# Some bricks have *every* object fail the epoch/baseline check above (e.g.
+# only one short observing run covers that patch of sky so far) -- the
+# catalogue file for such a brick is technically valid but scientifically
+# empty. Warn loudly rather than let that pass silently as just another
+# "finished" brick; see the per-brick log line in create_brick_catalogue.
+BRICK_WARN_INSUFFICIENT_FRACTION = 0.5
+
 
 def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
     A = np.zeros((2 * N, 5))
@@ -181,6 +188,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     pm_flag[~psf_mask] = -1  # not a PSF source, PM was never attempted
 
     fails = []
+    n_insufficient_data = 0  # objects where calculate_pm rejected both fits for having too few epochs/too short a baseline (see MIN_EPOCHS/MIN_BASELINE_DAYS) -- distinct from a per-object numerical failure (an exception)
 
     for i, objid in zip(J, tractor_table[1].data.objid[J]):
         try:
@@ -192,6 +200,9 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             fails.append(objid)
             pm_flag[i] = 0
             continue
+
+        if X_plx is None and X is None:
+            n_insufficient_data += 1
 
         success = True
 
@@ -220,6 +231,15 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
 
         ref_mjd[i] = rmjd
         pm_flag[i] = 1 if success else 0  # only mark success when both fits (with & without parallax) succeeded
+
+    if len(J) > 0:
+        frac_insufficient = n_insufficient_data / len(J)
+        if frac_insufficient >= BRICK_WARN_INSUFFICIENT_FRACTION:
+            logger.warning(
+                f"{filename}: {n_insufficient_data}/{len(J)} PSF objects ({100 * frac_insufficient:.0f}%) "
+                f"had no usable PM fit (too few epochs or too short a time baseline) -- this brick likely "
+                f"has inadequate temporal coverage for proper motion measurement, not just a handful of bad stars"
+            )
 
     pm_table[1].columns.add_col(fits.Column(name="pmra_plx", array=pmra_plx, format='E', unit='mas/yr'))
     pm_table[1].columns.add_col(fits.Column(name="pmra_plx_ivar", array=pmra_plx_ivar, format='E', unit='(mas/yr)^(-2)'))
