@@ -17,15 +17,48 @@ logger = logging.getLogger(__name__)
 
 DAYSPERYEAR = 365.2425
 
-    
+# A handful of stars in the archived catalogues came back with |PM| up to
+# ~1e16 mas/yr -- numerically "successful" (no LinAlgError) but physically
+# nonsense. Traced this to specific real cases (e.g. brick 0628p105, objid
+# 1499): NOT a matrix-conditioning problem -- cond(A) for these fits is
+# perfectly ordinary, and the reported variance is honestly large, matching
+# the wild point estimate. The actual cause is that *every* object in that
+# brick has a time baseline of ~36 days (vs. ~1200-1800 days for a normal,
+# well-covered brick, checked across several) -- nowhere near enough leverage
+# to constrain a mas/yr-level linear trend, so the least-squares point
+# estimate is essentially noise amplified by a tiny baseline, occasionally
+# landing "significant" by chance. This is a data-completeness issue for that
+# brick (probably imaged in only one short observing run so far), not a
+# per-star fluke, so it needs a baseline requirement, not just an epoch count.
+#   MIN_EPOCHS: below this there's no way to meaningfully constrain a linear
+#     trend (or a trend + parallax) against per-point noise.
+#   MIN_BASELINE_DAYS: below this, even many epochs can't meaningfully
+#     constrain a mas/yr-level trend -- chosen well inside the large gap
+#     observed between pathological (~30-50d) and normal (~1200-1800d)
+#     bricks, but worth revisiting if a future brick falls in between.
+#   MAX_COND_NUMBER: kept as a cheap backstop against true numerical
+#     singularity (duplicate/near-duplicate mjd values), though it did not
+#     catch the case above -- the baseline check is what actually matters.
+# None of these are derived from first principles -- worth sanity-checking
+# against more known-good vs. known-bad stars as more data comes back from
+# Dustin.
+MIN_EPOCHS = 5
+MIN_BASELINE_DAYS = 180
+MAX_COND_NUMBER = 1e8
+
+
 def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
     A = np.zeros((2 * N, 5))
-    A[:N, 0] = plx_dra / dra_error[obj_filt] 
+    A[:N, 0] = plx_dra / dra_error[obj_filt]
     A[N:, 0] = plx_ddec / ddec_error[obj_filt]
     A[:N, 1] = dt / dra_error[obj_filt]
     A[N:, 2] = dt / ddec_error[obj_filt]
     A[:N, 3] = np.ones(N)
     A[N:, 4] = np.ones(N)
+
+    cond = np.linalg.cond(A)
+    if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
+        raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
 
     X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
     X = X * 1000 # arcsec to mas
@@ -36,16 +69,20 @@ def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
     cov_matrix = np.linalg.inv(A.T @ A)
     variances = np.diag(cov_matrix) * 1000**2
     # parallax_var, pmra_plx_var, pmdec_plx_var, ra_offset_plx_var, dec_offset_plx_var = variances
-                
+
     return X, variances  # all in mas
 
 
-def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):    
+def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):
     A = np.zeros((2 * N, 4))
     A[:N, 0] = dt / dra_error[obj_filt]
     A[N:, 1] = dt / ddec_error[obj_filt]
     A[:N, 2] = np.ones(N)
     A[N:, 3] = np.ones(N)
+
+    cond = np.linalg.cond(A)
+    if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
+        raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
 
     X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
     X = X * 1000
@@ -54,10 +91,10 @@ def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):
     cov_matrix = np.linalg.inv(A.T @ A)
     variances = np.diag(cov_matrix) * 1000**2
     # pmra_var, pmdec_var, ra_offset_var, dec_offset_var = variances
-    
+
     return X, variances  # all in mas
-    
-    
+
+
 def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=False):
     ref_year = 0 # bc dra, ddec around 0, not actual ra, decs
     obj_filt = forced.objid == objid
@@ -77,7 +114,12 @@ def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=Fa
         B = np.append((forced.full_fit_dra / dra_error)[obj_filt], (forced.full_fit_ddec / ddec_error)[obj_filt])
     else:
         B = np.append((forced.lm_full_fit_dra / dra_error)[obj_filt], (forced.lm_full_fit_ddec / ddec_error)[obj_filt])
-    
+
+    mjd_obj = forced.mjd[obj_filt]
+    baseline_days = mjd_obj.max() - mjd_obj.min() if N > 0 else 0
+    if N < MIN_EPOCHS or baseline_days < MIN_BASELINE_DAYS:
+        return None, None, None, None, ref_mjd
+
     try:
         X_plx, variances_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B)
     except np.linalg.LinAlgError as err:
@@ -87,8 +129,8 @@ def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=Fa
         X, variances = pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B)
     except np.linalg.LinAlgError as err:
         X, variances = None, None
-        
-    return X_plx, variances_plx, X, variances, ref_mjd        
+
+    return X_plx, variances_plx, X, variances, ref_mjd
     
     
 def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_data=False):
