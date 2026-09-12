@@ -102,7 +102,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         pm_table = tractor_table.copy()
     except Exception as e:
         logger.error(f"Failed to open FITS files for {filename}: {e}")
-        return []
+        raise
 
     pmra_plx = np.zeros(len(tractor_table[1].data))
     pmra_plx_ivar = np.zeros(len(tractor_table[1].data))
@@ -134,8 +134,9 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     # dra_ivar = 1 / dra_error ** 2 
     # ddec_ivar = 1 / ddec_error ** 2 
 
-    J = np.flatnonzero(tractor_table[1].data.type == 'PSF')
-    pm_flag[~J] = -1
+    psf_mask = tractor_table[1].data.type == 'PSF'
+    J = np.flatnonzero(psf_mask)
+    pm_flag[~psf_mask] = -1  # not a PSF source, PM was never attempted
 
     fails = []
 
@@ -149,9 +150,11 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             fails.append(objid)
             pm_flag[i] = 0
             continue
-            
+
+        success = True
+
         if X_plx is None:
-            pm_flag[i] = 0
+            success = False
             dat = forced_table[1].data.full_fit_dra[forced_table[1].data.objid == objid]
             if dat.size != 0 and sum(dat) != 0:
                 fails.append(objid)
@@ -164,7 +167,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             new_dec_plx_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
 
         if X is None:
-            pm_flag[i] = 0
+            success = False
         else:
             pmra[i], pmdec[i], ra_offset, dec_offset = X # in mas, mas/yr
             new_ra[i] = tractor_table[1].data.ra[objid] + ra_offset / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600
@@ -174,7 +177,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             new_dec_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
 
         ref_mjd[i] = rmjd
-        pm_flag[i] = 1  
+        pm_flag[i] = 1 if success else 0  # only mark success when both fits (with & without parallax) succeeded
 
     pm_table[1].columns.add_col(fits.Column(name="pmra_plx", array=pmra_plx, format='E', unit='mas/yr'))
     pm_table[1].columns.add_col(fits.Column(name="pmra_plx_ivar", array=pmra_plx_ivar, format='E', unit='(mas/yr)^(-2)'))
@@ -199,26 +202,40 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
 
     print("done! now writing to file...")
 
-    output_path = f"{new_dir}tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
+    output_name = f"tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
+    output_path = f"{new_dir}{output_name}"
+    tmp_path = output_path + ".tmp"
     try:
-        pm_table.writeto(output_path, overwrite=True)
+        pm_table.writeto(tmp_path, overwrite=True)
+        os.replace(tmp_path, output_path)  # atomic: never leaves a truncated file at output_path
         logger.info(f"Saved PM catalogue to: {output_path}")
     except Exception as e:
         logger.error(f"Error writing PM file: {e}")
+        raise
 
     logger.info(f"Finished PM for {filename} in {time.time() - start_time:.2f} sec, failed on {len(fails)} object(s).")
     return fails
-    
-    
+
+
+def _output_is_complete(path):
+    return os.path.isfile(path) and os.path.getsize(path) > 0
+
+
 def create_catalogues(new_dir, old_dir, tractor_dir, original_data=False, cont=True):
     fails = []
     for filename in os.listdir(old_dir):
         f = os.path.join(old_dir, filename)
-        if not os.path.isfile(f) or filename[:6] != 'forced' or (cont is True and filename in os.listdir(new_dir)):
+        if not os.path.isfile(f) or filename[:6] != 'forced':
+            continue
+        output_name = f"tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
+        if cont is True and _output_is_complete(os.path.join(new_dir, output_name)):
             continue
         print(filename[-13:])
-        
-        fails.extend(create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_data))
+        try:
+            fails.extend(create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_data))
+        except Exception as e:
+            logger.error(f"Skipping brick {filename} due to error: {e}")
+            continue
     return fails
 
     

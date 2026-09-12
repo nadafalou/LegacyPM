@@ -168,79 +168,91 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
         corr_table = forced_table.copy()
     except Exception as e:
         logger.error(f"Failed to open FITS file {f}: {e}")
-        return
+        raise
 
+    if gaia:
+        logger.debug(f"{filename} - Using Gaia tractor file")
+        brickDCR = BrickDCR(corr_table[1].data, old_dir + "/gaia-tractor-" + filename[-8:], forced_table=True)
+    else:
+        brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
+
+    if sum(forced_table[1].data.filter == 'i') == 0:
+        logger.info(f"{filename} - No 'i' band detected, skipping DCR correction")
+        brickDCR.no_dcr()
+    else:
+        logger.info(f"{filename} - Applying DCR correction")
+        brickDCR.apply_correction()
+
+    temp_psf = np.flatnonzero(brickDCR.psf_filt)
+
+    dcr_full_fit_x = (corr_table[1].data.full_fit_x).copy()
+    dcr_full_fit_x[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_x
+    dcr_full_fit_y = (corr_table[1].data.full_fit_y).copy()
+    dcr_full_fit_y[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_y
+    dcr_full_fit_dra = (corr_table[1].data.full_fit_dra).copy()
+    dcr_full_fit_dra[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_dra
+    dcr_full_fit_ddec = (corr_table[1].data.full_fit_ddec).copy()
+    dcr_full_fit_ddec[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_ddec
+    dp1 = np.zeros(len(corr_table[1].data))
+    dp1[temp_psf[brickDCR.filt]] = brickDCR.dp1
+    colour_airmass = np.zeros(len(corr_table[1].data))
+    colour_airmass[temp_psf[brickDCR.filt]] = brickDCR.colour_airmass
+
+    corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+    corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+    corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+    corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+    corr_table[1].columns.add_col(fits.Column(name="dp1", array=np.zeros(len(corr_table[1].data)), format='E'))
+    corr_table[1].columns.add_col(fits.Column(name="colour_airmass", array=np.zeros(len(corr_table[1].data)), format='E'))
+    corr_table[1].data.dcr_full_fit_x = dcr_full_fit_x
+    corr_table[1].data.dcr_full_fit_y = dcr_full_fit_y
+    corr_table[1].data.dcr_full_fit_dra = dcr_full_fit_dra
+    corr_table[1].data.dcr_full_fit_ddec = dcr_full_fit_ddec
+    corr_table[1].data.dp1 = dp1
+    corr_table[1].data.colour_airmass = colour_airmass
+
+    output_path = f"{ corr_dir }{ filename }"
+    tmp_path = output_path + ".tmp"
     try:
-        if gaia:
-            logger.debug(f"{filename} - Using Gaia tractor file")
-            brickDCR = BrickDCR(corr_table[1].data, old_dir + "/gaia-tractor-" + filename[-8:], forced_table=True)
-        else:
-            brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
-            
-        if sum(forced_table[1].data.filter == 'i') == 0:
-            logger.info(f"{filename} - No 'i' band detected, skipping DCR correction")
-            brickDCR.no_dcr()
-        else:
-            logger.info(f"{filename} - Applying DCR correction")
-            brickDCR.apply_correction()
-        # except ValueError:
-        #     print("VALUE ERROR - DCR DID NOT WORK")
-        #     pass
-    
-        temp_psf = np.flatnonzero(brickDCR.psf_filt)
-    
-        dcr_full_fit_x = (corr_table[1].data.full_fit_x).copy()
-        dcr_full_fit_x[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_x
-        dcr_full_fit_y = (corr_table[1].data.full_fit_y).copy()
-        dcr_full_fit_y[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_y
-        dcr_full_fit_dra = (corr_table[1].data.full_fit_dra).copy()
-        dcr_full_fit_dra[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_dra
-        dcr_full_fit_ddec = (corr_table[1].data.full_fit_ddec).copy()
-        dcr_full_fit_ddec[temp_psf[brickDCR.filt]] = brickDCR.dcr_full_fit_ddec
-        dp1 = np.zeros(len(corr_table[1].data))
-        dp1[temp_psf[brickDCR.filt]] = brickDCR.dp1
-        colour_airmass = np.zeros(len(corr_table[1].data))
-        colour_airmass[temp_psf[brickDCR.filt]] = brickDCR.colour_airmass
-    
-        corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-        corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-        corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-        corr_table[1].columns.add_col(fits.Column(name="dcr_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-        corr_table[1].columns.add_col(fits.Column(name="dp1", array=np.zeros(len(corr_table[1].data)), format='E'))
-        corr_table[1].columns.add_col(fits.Column(name="colour_airmass", array=np.zeros(len(corr_table[1].data)), format='E'))
-        corr_table[1].data.dcr_full_fit_x = dcr_full_fit_x
-        corr_table[1].data.dcr_full_fit_y = dcr_full_fit_y
-        corr_table[1].data.dcr_full_fit_dra = dcr_full_fit_dra
-        corr_table[1].data.dcr_full_fit_ddec = dcr_full_fit_ddec
-        corr_table[1].data.dp1 = dp1
-        corr_table[1].data.colour_airmass = colour_airmass
-      
-        corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
-        elapsed = time.time() - start_time
-        logger.info(f"Finished processing {filename} in {elapsed:.2f} seconds")
-
+        corr_table.writeto(tmp_path, overwrite=True)
+        os.replace(tmp_path, output_path)  # atomic: never leaves a truncated file at output_path
     except Exception as e:
-        logger.error(f"Error while processing brick {filename}: {e}")
-    
-    
+        logger.error(f"Error writing corrected file for brick {filename}: {e}")
+        raise
+    elapsed = time.time() - start_time
+    logger.info(f"Finished processing {filename} in {elapsed:.2f} seconds")
+
+
+def _output_is_complete(path):
+    return os.path.isfile(path) and os.path.getsize(path) > 0
+
+
 def create_corrected_data(corr_dir, old_dir, cont=True):
     for filename in os.listdir(old_dir):
         f = os.path.join(old_dir, filename)
-        if not os.path.isfile(f) or filename[:6] != 'forced' or (cont is True and filename in os.listdir(corr_dir)):
+        out = os.path.join(corr_dir, filename)
+        if not os.path.isfile(f) or filename[:6] != 'forced' or (cont is True and _output_is_complete(out)):
             continue
         print(filename)
-        
-        create_brick_corrected_data(filename, corr_dir, old_dir)
+        try:
+            create_brick_corrected_data(filename, corr_dir, old_dir)
+        except Exception as e:
+            logger.error(f"Skipping brick {filename} due to error: {e}")
+            continue
 
 
 def create_corrected_gaia(corr_dir, old_dir, cont=True):
     for filename in os.listdir(old_dir):
         f = os.path.join(old_dir, filename)
-        if not os.path.isfile(f) or filename[:11] != 'gaia-forced' or (cont is True and filename in os.listdir(corr_dir)):
+        out = os.path.join(corr_dir, filename)
+        if not os.path.isfile(f) or filename[:11] != 'gaia-forced' or (cont is True and _output_is_complete(out)):
             continue
         print(filename)
-        
-        create_brick_corrected_data(filename, corr_dir, old_dir, gaia=True)
+        try:
+            create_brick_corrected_data(filename, corr_dir, old_dir, gaia=True)
+        except Exception as e:
+            logger.error(f"Skipping brick {filename} due to error: {e}")
+            continue
 
     
 def create_gaia_tractor(new_dir, old_dir, cont=True):

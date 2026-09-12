@@ -108,63 +108,75 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tweaks):
         logger.debug(f"Opened FITS file: {f}")
     except Exception as e:
         logger.error(f"Failed to open FITS for {filename}: {e}")
-        return
+        raise
 
+    ccdnames = np.unique(corr_table[1].data.ccdname)
+
+    corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+    corr_table[1].data["rm_full_fit_x"] = (corr_table[1].data.dcr_full_fit_x).copy()
+    corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
+    corr_table[1].data["rm_full_fit_y"] = (corr_table[1].data.dcr_full_fit_y).copy()
+    corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+    corr_table[1].data["rm_full_fit_dra"] = (corr_table[1].data.dcr_full_fit_dra).copy()
+    corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
+    corr_table[1].data["rm_full_fit_ddec"] = (corr_table[1].data.dcr_full_fit_ddec).copy()
+
+    for ccdname in ccdnames:
+        for filt in ['g','r','i','z']:
+            key = (ccdname, filt)
+            if key not in tweaks:
+                logger.warning(f"No spline found for {key}")
+                continue
+            J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
+                                * np.isin(corr_table[1].data.filter, filt)
+                                * (corr_table[1].data.full_fit_dra_ivar > 1e4)
+                                * (corr_table[1].data.full_fit_dra != 0.)
+                                * (corr_table[1].data.dqmask == 0))
+            if len(J) == 0:
+                logger.debug(f"No valid sources for {key}")
+                continue
+            spline = tweaks[(ccdname, filt)]
+            xpos = corr_table[1].data.dcr_full_fit_x[J]
+            ypos = corr_table[1].data.dcr_full_fit_y[J]
+
+            xpos, ypos = xpos - spline[0](xpos, ypos, grid=False), ypos - spline[1](xpos, ypos, grid=False)
+
+            dDEC = -0.262 * (xpos - corr_table[1].data.dcr_full_fit_x[J]) # bc Dustin said so
+            dRA = +0.262 * (ypos - corr_table[1].data.dcr_full_fit_y[J])
+
+            corr_table[1].data["rm_full_fit_x"][J] = xpos
+            corr_table[1].data["rm_full_fit_y"][J] = ypos
+            corr_table[1].data["rm_full_fit_dra"][J] = corr_table[1].data["dcr_full_fit_dra"][J] + dRA
+            corr_table[1].data["rm_full_fit_ddec"][J] = corr_table[1].data["dcr_full_fit_ddec"][J] + dDEC
+
+    output_path = f"{ corr_dir }{ filename }"
+    tmp_path = output_path + ".tmp"
     try:
-        ccdnames = np.unique(corr_table[1].data.ccdname)
-    
-        corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-        corr_table[1].data["rm_full_fit_x"] = (corr_table[1].data.dcr_full_fit_x).copy()
-        corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-        corr_table[1].data["rm_full_fit_y"] = (corr_table[1].data.dcr_full_fit_y).copy()
-        corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-        corr_table[1].data["rm_full_fit_dra"] = (corr_table[1].data.dcr_full_fit_dra).copy()
-        corr_table[1].columns.add_col(fits.Column(name="rm_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-        corr_table[1].data["rm_full_fit_ddec"] = (corr_table[1].data.dcr_full_fit_ddec).copy()
-    
-        for ccdname in ccdnames:
-            for filt in ['g','r','i','z']:
-                key = (ccdname, filt)
-                if key not in tweaks:
-                    logger.warning(f"No spline found for {key}")
-                    continue
-                J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
-                                    * np.isin(corr_table[1].data.filter, filt)
-                                    * (corr_table[1].data.full_fit_dra_ivar > 1e4)
-                                    * (corr_table[1].data.full_fit_dra != 0.)
-                                    * (corr_table[1].data.dqmask == 0))
-                if len(J) == 0:
-                    logger.debug(f"No valid sources for {key}")
-                    continue
-                spline = tweaks[(ccdname, filt)]
-                xpos = corr_table[1].data.dcr_full_fit_x[J]
-                ypos = corr_table[1].data.dcr_full_fit_y[J]
-    
-                xpos, ypos = xpos - spline[0](xpos, ypos, grid=False), ypos - spline[1](xpos, ypos, grid=False)
-    
-                dDEC = -0.262 * (xpos - corr_table[1].data.dcr_full_fit_x[J]) # bc Dustin said so
-                dRA = +0.262 * (ypos - corr_table[1].data.dcr_full_fit_y[J])
-    
-                corr_table[1].data["rm_full_fit_x"][J] = xpos
-                corr_table[1].data["rm_full_fit_y"][J] = ypos
-                corr_table[1].data["rm_full_fit_dra"][J] = corr_table[1].data["dcr_full_fit_dra"][J] + dRA
-                corr_table[1].data["rm_full_fit_ddec"][J] = corr_table[1].data["dcr_full_fit_ddec"][J] + dDEC
-        corr_table.writeto(f"{ corr_dir }{ filename }", overwrite=True)
-        elapsed = time.time() - start_time
-        logger.info(f"Finished RM correction for {filename} in {elapsed:.2f} seconds")
-
+        corr_table.writeto(tmp_path, overwrite=True)
+        os.replace(tmp_path, output_path)  # atomic: never leaves a truncated file at output_path
     except Exception as e:
-        logger.error(f"Error during RM correction for {filename}: {e}")
+        logger.error(f"Error writing RM-corrected file for brick {filename}: {e}")
+        raise
+    elapsed = time.time() - start_time
+    logger.info(f"Finished RM correction for {filename} in {elapsed:.2f} seconds")
 
-    
+
+def _output_is_complete(path):
+    return os.path.isfile(path) and os.path.getsize(path) > 0
+
+
 def create_corrected_data(corr_dir, old_dir, tweaks, cont=False):
     for filename in os.listdir(old_dir):
         f = os.path.join(old_dir, filename)
-        if not os.path.isfile(f) or filename[:6] != 'forced' or filename[:4] != 'gaia' or (cont is True and filename in os.listdir(corr_dir)):
+        out = os.path.join(corr_dir, filename)
+        if not os.path.isfile(f) or filename[:6] != 'forced' or (cont is True and _output_is_complete(out)):
             continue
         print(f)
-        
-        create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
+        try:
+            create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
+        except Exception as e:
+            logger.error(f"Skipping brick {filename} due to error: {e}")
+            continue
 
 
 if __name__ == "__main__":
@@ -181,6 +193,7 @@ if __name__ == "__main__":
         create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
     except Exception as e:
         logger.error(f"Fatal error in main execution: {e}")
+        raise
 
 # def main():  
 #     corr_dir = '../../../cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/'
