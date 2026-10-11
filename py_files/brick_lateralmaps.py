@@ -1,3 +1,5 @@
+import os
+import json
 import numpy as np
 from astrometry.util.fits import *
 from astropy.io import fits
@@ -17,6 +19,39 @@ BY = int(4096 // BINNING)
 BX = int(2048 // BINNING)
 pcolors = np.array([0.07428406, 0.92169225, 2.33498669, 3.49276543])
 median_color = 1.642 # pivot
+
+# Smooth lateral-colour model (replaces the binned per-CCD maps below, which were noise-dominated: see PLAN.md
+# "Lateral-colour (LM) diagnosis"). Fit and written by run/lateral-model.ipynb.
+LATERAL_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lateral_model_poly3.json')
+
+
+def load_lateral_model(path=LATERAL_MODEL_PATH):
+    with open(path) as f:
+        model = json.load(f)
+    model['coef'] = {filt: np.array(c) for filt, c in model['coef'].items()}
+    return model
+
+
+def lateral_shift(model, ccdnames, filt, x, y, colour):
+    """Lateral-colour shift (pixels) to subtract from the positions x, y (rm_full_fit_x/y) of measurements in
+    band `filt`. Returns (dx, dy); zero for CCDs or bands the model doesn't cover."""
+    dx = np.zeros(len(x))
+    dy = np.zeros(len(x))
+    if filt not in model['coef']:
+        return dx, dy
+    crpix = np.array([model['crpixes'].get(c, (np.nan, np.nan)) for c in ccdnames], dtype=float).reshape(-1, 2)
+    ok = np.isfinite(crpix[:, 0])
+    u = (x[ok] - crpix[ok, 0]) / model['fp_scale']
+    v = (y[ok] - crpix[ok, 1]) / model['fp_scale']
+    P = np.stack([u**i * v**j for i, j in model['poly_terms']], 1) * (colour[ok] - model['c0'])[:, None]
+    n = len(model['poly_terms'])
+    coef = model['coef'][filt]
+    dx[ok] = P @ coef[:n]
+    dy[ok] = P @ coef[n:]
+    return dx, dy
+
+
+# --- Legacy binned maps (no longer used by the pipeline; kept for create-maps.ipynb) ---
 
 
 def get_gaia_data(directory='/pscratch/sd/d/dstn/rm-corrected-3-gaia/'): ## refer   to RM_colours.ipynb
@@ -41,7 +76,7 @@ def make_lateralmaps(data, filename, data_colour):
         for filt in ['g','r','i','z']:
             J = np.flatnonzero((data.ccdname == ccdname)
                                 * np.isin(data.filter, filt)
-                                * (data.full_fit_dra_ivar > 1)
+                                * (data.full_fit_dra_ivar > 1e4)  # build maps from high-S/N measurements only (sigma < 10 mas)
                                 * (data.dcr_full_fit_dra != 0.)
                                 * (data.dqmask == 0)
                                 * ((data_colour > pcolors[0]) * (data_colour < pcolors[1])
@@ -104,7 +139,7 @@ def make_splines(lateralmaps):
     return tweaks
 
 
-def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks):
+def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model):
     logger.info(f"Starting correction for brick: {filename}")
     start_time = time.time()
     
@@ -126,40 +161,40 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks
     dc = t.color[t_index]
 
     corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_x", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-    corr_table[1].data["lm_full_fit_x"] = (corr_table[1].data.dcr_full_fit_x).copy()
+    corr_table[1].data["lm_full_fit_x"] = (corr_table[1].data.rm_full_fit_x).copy()
     corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_y", array=np.zeros(len(corr_table[1].data)), format='E', unit='pixel'))
-    corr_table[1].data["lm_full_fit_y"] = (corr_table[1].data.dcr_full_fit_y).copy()
+    corr_table[1].data["lm_full_fit_y"] = (corr_table[1].data.rm_full_fit_y).copy()
     corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_dra", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-    corr_table[1].data["lm_full_fit_dra"] = (corr_table[1].data.dcr_full_fit_dra).copy()
+    corr_table[1].data["lm_full_fit_dra"] = (corr_table[1].data.rm_full_fit_dra).copy()
     corr_table[1].columns.add_col(fits.Column(name="lm_full_fit_ddec", array=np.zeros(len(corr_table[1].data)), format='E', unit='arcsec'))
-    corr_table[1].data["lm_full_fit_ddec"] = (corr_table[1].data.dcr_full_fit_ddec).copy()
+    corr_table[1].data["lm_full_fit_ddec"] = (corr_table[1].data.rm_full_fit_ddec).copy()
 
-    logger.info(f"Applying lateral map corrections for CCDs in {filename}")
-    for ccdname in ccdnames:
-        for filt in ['g','r','i','z']:
-            J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
-                                * np.isin(corr_table[1].data.filter, filt)
-                                * (corr_table[1].data.full_fit_dra_ivar > 1e4)
-                                * (corr_table[1].data.full_fit_dra != 0.)
-                                * (corr_table[1].data.dqmask == 0)
-                                * (np.invert(np.isinf(dc))))
+    logger.info(f"Applying lateral colour model to {filename}")
+    missing = set(np.char.strip(np.asarray(ccdnames).astype(str))) - set(model['crpixes'])
+    if missing:
+        logger.warning(f"No focal-plane position for CCD(s) {sorted(missing)}; their measurements are left uncorrected")
+    for filt in ['g','r','i','z']:
+        J = np.flatnonzero(np.isin(corr_table[1].data.filter, filt)
+                            # apply to every measurement with a valid fit: a systematic shift doesn't depend on S/N,
+                            # and correcting only some epochs of a star would add spurious jumps to its PM fit
+                            * (corr_table[1].data.full_fit_dra_ivar > 0)
+                            * (corr_table[1].data.full_fit_dra != 0.)
+                            * np.isfinite(dc))
+        if len(J) == 0:
+            continue
+        xpos = corr_table[1].data.rm_full_fit_x[J]
+        ypos = corr_table[1].data.rm_full_fit_y[J]
+        ccd = np.char.strip(np.asarray(corr_table[1].data.ccdname[J]).astype(str))
+        dx, dy = lateral_shift(model, ccd, filt, xpos, ypos, dc[J])
+        xpos, ypos = xpos - dx, ypos - dy
 
-            spline = tweaks[(ccdname, filt)]
-            if spline is None:
-                logger.warning(f"No spline found for {ccdname}-{filt}")
-                continue
-            xpos = corr_table[1].data.rm_full_fit_x[J]
-            ypos = corr_table[1].data.rm_full_fit_y[J]
+        dDEC = -0.262 * (xpos - corr_table[1].data.rm_full_fit_x[J]) # bc Dustin said so; verified empirically on every CCD
+        dRA = +0.262 * (ypos - corr_table[1].data.rm_full_fit_y[J])
 
-            xpos, ypos = xpos - spline[0](xpos, ypos, grid=False) * (dc[J] - median_color), ypos - spline[1](xpos, ypos, grid=False) * (dc[J] - median_color)
-
-            dDEC = -0.262 * (xpos - corr_table[1].data.rm_full_fit_x[J]) # bc Dustin said so
-            dRA = +0.262 * (ypos - corr_table[1].data.rm_full_fit_y[J])
-
-            corr_table[1].data["lm_full_fit_x"][J] = xpos
-            corr_table[1].data["lm_full_fit_y"][J] = ypos
-            corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
-            corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
+        corr_table[1].data["lm_full_fit_x"][J] = xpos
+        corr_table[1].data["lm_full_fit_y"][J] = ypos
+        corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
+        corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
 
     output_path = f"{ corr_dir }{ filename }"
     tmp_path = output_path + ".tmp"
@@ -177,7 +212,7 @@ def _output_is_complete(path):
     return os.path.isfile(path) and os.path.getsize(path) > 0
 
 
-def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
+def create_corrected_data(corr_dir, old_dir, tractor_dir, model, cont=False):
     for filename in os.listdir(old_dir):
         f = os.path.join(old_dir, filename)
         out = os.path.join(corr_dir, filename)
@@ -185,7 +220,7 @@ def create_corrected_data(corr_dir, old_dir, tractor_dir, tweaks, cont=False):
             continue
         print(f)
         try:
-            create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
+            create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
         except Exception as e:
             logger.error(f"Skipping brick {filename} due to error: {e}")
             continue
@@ -199,9 +234,8 @@ if __name__ == "__main__":
     filename, corr_dir, old_dir, tractor_dir = sys.argv[1:]
     logger.info(f"Main execution started for {filename}")
     try:
-        lmaps = get_lateralmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/lm-corrected-forced-motions/' + 'lateralmaps.fits')
-        tweaks = make_splines(lmaps)
-        create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, tweaks)
+        model = load_lateral_model()
+        create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
     except Exception as e:
         logger.error(f"Fatal error in main: {e}")
         raise

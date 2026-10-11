@@ -36,7 +36,7 @@ def make_ringmaps(data, filename):
         for filt in ['g','r','i','z']:
             J = np.flatnonzero((data.ccdname == ccdname)
                                 * np.isin(data.filter, filt)
-                                * (data.full_fit_dra_ivar > 1)
+                                * (data.full_fit_dra_ivar > 1e4)  # build maps from high-S/N measurements only (sigma < 10 mas)
                                 * (data.dcr_full_fit_dra != 0.)
                                 * (data.dqmask == 0))
             # number of pixels to bin together for tree-rings
@@ -129,9 +129,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tweaks):
                 continue
             J = np.flatnonzero((corr_table[1].data.ccdname == ccdname)
                                 * np.isin(corr_table[1].data.filter, filt)
-                                * (corr_table[1].data.full_fit_dra_ivar > 1e4)
-                                * (corr_table[1].data.full_fit_dra != 0.)
-                                * (corr_table[1].data.dqmask == 0))
+                                # apply to every measurement with a valid fit: a systematic shift doesn't depend on S/N,
+                                # and correcting only some epochs of a star would add spurious jumps to its PM fit
+                                * (corr_table[1].data.full_fit_dra_ivar > 0)
+                                * (corr_table[1].data.full_fit_dra != 0.))
             if len(J) == 0:
                 logger.debug(f"No valid sources for {key}")
                 continue

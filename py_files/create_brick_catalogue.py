@@ -215,7 +215,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             parallax[i], pmra_plx[i], pmdec_plx[i], ra_offset, dec_offset = X_plx # in mas, mas/yr
             new_ra_plx[i] = tractor_table[1].data.ra[objid] + ra_offset / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600
             new_dec_plx[i] = tractor_table[1].data.dec[objid] + dec_offset / 1000 / 3600
-            parallax_ivar[i], pmra_plx_ivar[i], pmdec_plx_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / variances_plx
+            parallax_ivar[i], pmra_plx_ivar[i], pmdec_plx_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / var_plx
             new_ra_plx_ivar[i] = 1 / ((1 / np.sqrt(ra_offset_ivar)) / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600)**2
             new_dec_plx_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
 
@@ -225,7 +225,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             pmra[i], pmdec[i], ra_offset, dec_offset = X # in mas, mas/yr
             new_ra[i] = tractor_table[1].data.ra[objid] + ra_offset / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600
             new_dec[i] = tractor_table[1].data.dec[objid] + dec_offset / 1000 / 3600
-            pmra_ivar[i], pmdec_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / variances
+            pmra_ivar[i], pmdec_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / var
             new_ra_ivar[i] = 1 / ((1 / np.sqrt(ra_offset_ivar)) / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600)**2
             new_dec_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
 
