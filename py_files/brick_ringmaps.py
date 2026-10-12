@@ -18,6 +18,8 @@ BY = int(4096 // BINNING)
 BX = int(2048 // BINNING)
 
 
+RINGMAPS_PATH = '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/ringmaps.fits'  # Apr 2024 maps, see PLAN.md
+
 def get_gaia_data(directory='/pscratch/sd/d/dstn/forced-motions-3/'):
     G = merge_tables([
             fits_table(directory + '/gaia-1k.fits'),
@@ -189,7 +191,7 @@ if __name__ == "__main__":
     logger.info(f"Starting processing for brick: {filename}")
 
     try:
-        rmaps = get_ringmaps('/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/ringmaps.fits')
+        rmaps = get_ringmaps(RINGMAPS_PATH)
         tweaks = make_splines(rmaps)
         create_brick_corrected_data(filename, corr_dir, old_dir, tweaks)
     except Exception as e:

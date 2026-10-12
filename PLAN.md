@@ -224,7 +224,16 @@ Proposed fix (remaining):
 - New `py_files/prep_archive_rerun.py`: rebuilds RM/LM/PM inputs from the archive (raw inputs are purged).
 - End-to-end test scripts saved to `run/e2e/` (were in the session scratchpad).
 
-## Next run (code is ready as of 2026-10-12)
-1. `sbatch run_bricks.sbatch 060 061 062 063 --from-archive` (548 bricks) and `sbatch run_bricks.sbatch 060 061 062 063`
-   (4,037 new bricks) -> complete 060-063 with current code.
-2. rsync output to CFS. 3. Repoint notebooks, then figures (Step 2) and error analysis (14.8 mas floor).
+## Goal: RA 000-063 processed with the current code, ready for analysis (Nada, 2026-10-12)
+- Inputs (2026-10-12): 84,358 DR10 bricks in 000-063; 81,491 available (Dustin pscratch 4,114 incl. 060-063, Dustin CFS
+  76,894 for 000-057, archive 548). Missing 2,867 -> missing_bricks.txt (A: 557 in 000-057, B: whole 058-059).
+- slurm/run_bricks.py rewritten: picks each brick's source automatically (pscratch > CFS > archive), accepts ranges,
+  loads the DCR CCD table once (was ~45 s + 14 GB per brick) and forks workers: ~15-20 s/brick on a login node.
+  Tested: 2 archive + 4 new bricks; dry run over 000-063 finds all 81,491.
+- [x] Debug-qos test job 59704930 (058, 2026-10-12): 6/6 bricks OK, peak 20 GB. Full bricks took 80-120 s, mostly the
+  PM step (per-object full-table masks + per-epoch radec_at_mjd loop). Sped up (row grouping once, vectorised
+  parallax factors, plain arrays): PM 56 -> 5.8 s and 93 -> 6.6 s on full bricks; output bit-identical in every column
+  on 6 bricks (4 from 058, 2 archive incl. Gaia stars). Typical brick now ~35-45 s; sbatch now 128 workers, 6 h. [ ] 4 jobs: 000-015, 016-031, 032-047, 048-063 (RUNBOOK TL;DR).
+- [ ] rsync tractor-pm to CFS; ask Dustin about CFS space for the ~3.5 TB of forced files.
+- [ ] Send missing_bricks.txt to Dustin; resubmit the same ranges when they arrive.
+- [ ] Then: repoint notebooks, figures (Step 2), error analysis / 14.8 mas floor.

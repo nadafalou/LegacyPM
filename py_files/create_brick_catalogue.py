@@ -54,14 +54,14 @@ MAX_COND_NUMBER = 1e8
 BRICK_WARN_INSUFFICIENT_FRACTION = 0.5
 
 
-def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
+def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B):
     A = np.zeros((2 * N, 5))
-    A[:N, 0] = plx_dra / dra_error[obj_filt]
-    A[N:, 0] = plx_ddec / ddec_error[obj_filt]
-    A[:N, 1] = dt / dra_error[obj_filt]
-    A[N:, 2] = dt / ddec_error[obj_filt]
-    A[:N, 3] = 1 / dra_error[obj_filt]  # offset columns must be weighted like the data (B = d/sigma)
-    A[N:, 4] = 1 / ddec_error[obj_filt]
+    A[:N, 0] = plx_dra / dra_error
+    A[N:, 0] = plx_ddec / ddec_error
+    A[:N, 1] = dt / dra_error
+    A[N:, 2] = dt / ddec_error
+    A[:N, 3] = 1 / dra_error  # offset columns must be weighted like the data (B = d/sigma)
+    A[N:, 4] = 1 / ddec_error
 
     cond = np.linalg.cond(A)
     if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
@@ -80,12 +80,12 @@ def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
     return X, variances  # all in mas
 
 
-def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):
+def pm_lsq(N, dt, dra_error, ddec_error, B):
     A = np.zeros((2 * N, 4))
-    A[:N, 0] = dt / dra_error[obj_filt]
-    A[N:, 1] = dt / ddec_error[obj_filt]
-    A[:N, 2] = 1 / dra_error[obj_filt]  # offset columns must be weighted like the data (B = d/sigma)
-    A[N:, 3] = 1 / ddec_error[obj_filt]
+    A[:N, 0] = dt / dra_error
+    A[N:, 1] = dt / ddec_error
+    A[:N, 2] = 1 / dra_error  # offset columns must be weighted like the data (B = d/sigma)
+    A[N:, 3] = 1 / ddec_error
 
     cond = np.linalg.cond(A)
     if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
@@ -102,44 +102,39 @@ def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):
     return X, variances  # all in mas
 
 
-def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=False):
+def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
+    """Fit one object. mjd, dra, ddec (arcsec) and the errors are that object's per-epoch measurements;
+    ra, dec its Tractor position (deg)."""
     ref_year = 0 # bc dra, ddec around 0, not actual ra, decs
-    obj_filt = forced.objid == objid
-
-    plx_ra, plx_dec = [], []
-    for date in forced.mjd[obj_filt]:
-        ra, dec = radec_at_mjd(tractor.ra[objid], tractor.dec[objid], ref_year, 0, 0, 1000, date) # mas/ye and mas, returns deg
-        plx_ra.append(ra)
-        plx_dec.append(dec)
-    plx_dra, plx_ddec = (np.array(plx_ra) - tractor.ra[objid]) * np.cos(np.deg2rad(tractor.dec[objid])) * 3600, (np.array(plx_dec) - tractor.dec[objid]) * 3600 # change in ra, dec due to parallax = 1 arcsec
+    N = len(mjd)
     dra_ivar = 1 / dra_error ** 2
-    ref_mjd = np.sum((dra_ivar * forced.mjd)[obj_filt]) / np.sum(dra_ivar[obj_filt]) # ref_mjd for this dataset is different from Gaia's ref_mjd
-                                                                                     # theoretically, dra_ivar ~= ddec_ivar
-    dt = (forced.mjd[obj_filt] - ref_mjd) / DAYSPERYEAR
-    N = len(forced.full_fit_dra[obj_filt])
-    if original_data:
-        B = np.append((forced.full_fit_dra / dra_error)[obj_filt], (forced.full_fit_ddec / ddec_error)[obj_filt])
-    else:
-        B = np.append((forced.lm_full_fit_dra / dra_error)[obj_filt], (forced.lm_full_fit_ddec / ddec_error)[obj_filt])
-
-    mjd_obj = forced.mjd[obj_filt]
-    baseline_days = mjd_obj.max() - mjd_obj.min() if N > 0 else 0
+    ref_mjd = np.sum(dra_ivar * mjd) / np.sum(dra_ivar) # ref_mjd for this dataset is different from Gaia's ref_mjd
+                                                        # theoretically, dra_ivar ~= ddec_ivar
+    baseline_days = mjd.max() - mjd.min() if N > 0 else 0
     if N < MIN_EPOCHS or baseline_days < MIN_BASELINE_DAYS:
         return None, None, None, None, ref_mjd
 
+    # change in ra, dec due to parallax = 1 arcsec, at each epoch (radec_at_mjd needs all-vector arguments)
+    one = np.ones(N)
+    plx_ra, plx_dec = radec_at_mjd(ra * one, dec * one, ref_year * one, 0 * one, 0 * one, 1000 * one, mjd)
+    plx_dra = (plx_ra - ra) * np.cos(np.deg2rad(dec)) * 3600
+    plx_ddec = (plx_dec - dec) * 3600
+    dt = (mjd - ref_mjd) / DAYSPERYEAR
+    B = np.append(dra / dra_error, ddec / ddec_error)
+
     try:
-        X_plx, variances_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B)
+        X_plx, variances_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B)
     except np.linalg.LinAlgError as err:
         X_plx, variances_plx = None, None
 
     try:
-        X, variances = pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B)
+        X, variances = pm_lsq(N, dt, dra_error, ddec_error, B)
     except np.linalg.LinAlgError as err:
         X, variances = None, None
 
     return X_plx, variances_plx, X, variances, ref_mjd
-    
-    
+
+
 def reference_motion(tractor, objid, ref_mjd):
     """The forced photometry moves every source with ref_epoch > 0 (Gaia stars) to each image's epoch using the
     catalogue's pmra, pmdec and parallax (legacypipe forced_photom, --move-gaia), so for those sources the fitted
@@ -147,14 +142,14 @@ def reference_motion(tractor, objid, ref_mjd):
     only, no parallax displacement), and the motion and its variances to add back to the fit so that our PM and
     parallax columns are absolute for every source. For sources without a reference motion: tractor ra/dec, zeros.
     """
-    ra, dec = tractor.ra[objid], tractor.dec[objid]
+    ra, dec = tractor['ra'][objid], tractor['dec'][objid]
     zero = {'pmra': 0., 'pmdec': 0., 'parallax': 0.}
-    if not tractor.ref_epoch[objid] > 0:
+    if not tractor['ref_epoch'][objid] > 0:
         return ra, dec, zero, dict(zero)
     pm = {k: float(tractor[k][objid]) for k in ('pmra', 'pmdec', 'parallax')}
     var = {k: (1 / float(tractor[k + '_ivar'][objid]) if tractor[k + '_ivar'][objid] > 0 else 0.)
            for k in ('pmra', 'pmdec', 'parallax')}
-    ra0, dec0 = radec_at_mjd(ra, dec, float(tractor.ref_epoch[objid]), pm['pmra'], pm['pmdec'], 0., ref_mjd)
+    ra0, dec0 = radec_at_mjd(ra, dec, float(tractor['ref_epoch'][objid]), pm['pmra'], pm['pmdec'], 0., ref_mjd)
     return float(np.atleast_1d(ra0)[0]), float(np.atleast_1d(dec0)[0]), pm, var
 
 
@@ -205,13 +200,29 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     J = np.flatnonzero(psf_mask)
     pm_flag[~psf_mask] = -1  # not a PSF source, PM was never attempted
 
+    # Plain numpy copies of the columns used per object (FITS_rec column access is slow), and each object's
+    # measurement rows found once (a stable sort keeps them in file order) instead of a full-table mask per object.
+    F = forced_table[1].data
+    f_objid = np.asarray(F.objid)
+    f_mjd = np.asarray(F.mjd, dtype=float)
+    f_dra = np.asarray(F.full_fit_dra if original_data else F.lm_full_fit_dra)
+    f_ddec = np.asarray(F.full_fit_ddec if original_data else F.lm_full_fit_ddec)
+    f_raw_dra = np.asarray(F.full_fit_dra)
+    order = np.argsort(f_objid, kind='stable')
+    uniq, starts = np.unique(f_objid[order], return_index=True)
+    rows_of = dict(zip(uniq.tolist(), np.split(order, starts[1:])))
+    no_rows = np.zeros(0, dtype=int)
+    T = {k: np.asarray(tractor_table[1].data[k]) for k in
+         ('ra', 'dec', 'ref_epoch', 'pmra', 'pmdec', 'parallax', 'pmra_ivar', 'pmdec_ivar', 'parallax_ivar')}
+
     fails = []
     n_insufficient_data = 0  # objects where calculate_pm rejected both fits for having too few epochs/too short a baseline (see MIN_EPOCHS/MIN_BASELINE_DAYS) -- distinct from a per-object numerical failure (an exception)
 
     for i, objid in zip(J, tractor_table[1].data.objid[J]):
+        rows = rows_of.get(int(objid), no_rows)
         try:
             X_plx, var_plx, X, var, rmjd = calculate_pm(
-                forced_table[1].data, tractor_table[1].data, objid, dra_error, ddec_error, original_data
+                f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][objid], T['dec'][objid]
             )
         except Exception as e:
             logger.warning(f"Error calculating PM for objid={objid}: {e}")
@@ -225,12 +236,12 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         success = True
 
         # reference motion the forced photometry already moved this source with (zero unless it is a Gaia star)
-        ra0, dec0, ref_pm, ref_var = reference_motion(tractor_table[1].data, objid, rmjd)
+        ra0, dec0, ref_pm, ref_var = reference_motion(T, objid, rmjd)
         cosdec = np.cos(np.deg2rad(dec0))
 
         if X_plx is None:
             success = False
-            dat = forced_table[1].data.full_fit_dra[forced_table[1].data.objid == objid]
+            dat = f_raw_dra[rows]
             if dat.size != 0 and sum(dat) != 0:
                 fails.append(objid)
         else:

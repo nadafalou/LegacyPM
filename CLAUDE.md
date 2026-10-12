@@ -41,8 +41,9 @@ login currently fails. The image provides software only; the code always runs fr
   `slurm/run_bricks.py`. Notebooks still point at old dirs there -- repoint them.
 
 ## Constraints
-- Dustin delivered the forced photometry for RA 060-063 (complete with the archive) on 2026-10-10. The 548 archived
-  bricks predate the current code -> rerun them with `--from-archive` rather than analysing them as they are.
+- Goal: RA 000-063 processed with the current code (`slurm/run_bricks.py 000-063`, see RUNBOOK.md) for the analysis
+  and plots. Inputs exist for 81,491 of 84,358 bricks; the rest (058-059 and 557 gaps) are in missing_bricks.txt.
+  The 548 archived bricks predate the current code; run_bricks.py reruns them from their DCR columns automatically.
 - pscratch is purged: copy finished output to CFS.
 - **All paper figures must be produced by notebooks in `run/`** (`err-plots.ipynb` is the main one), saved into
   `writeup/plots/`. Don't make figures with ad hoc scripts.

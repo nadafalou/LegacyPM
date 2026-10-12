@@ -1,93 +1,160 @@
 """Run the per-brick pipeline for whole RA degree slices inside one Slurm job (no FireWorks / MongoDB needed).
-Same steps and commands as fireworks/legacypm_workflow.py, run as subprocesses in a pool of workers.
+Same steps as fireworks/legacypm_workflow.py. The big calibration tables (the CCD table brick_DCR loads at import:
+~45 s and 14 GB) are loaded once in the parent process and shared with forked worker processes.
 Restartable: bricks whose tractor-pm-<brick>.fits already exists (non-empty) are skipped.
 
-  python run_bricks.py 060 061 --workers 64                 # new bricks from Dustin's forced photometry
-  python run_bricks.py 060 --from-archive                   # rerun RM/LM/PM on the archived bricks
-  python run_bricks.py 060 --dry-run                        # just count
+Each brick's input is taken from the first source that has it (see SOURCES):
+  scratch  Dustin's current DR10 forced photometry on pscratch (newest)
+  cfs      Dustin's Dec 2024 - Jan 2025 DR10 run on CFS (RA 000-057)
+  archive  our Feb-Mar 2025 output (RA 060-063); raw inputs purged, so RM/LM/PM are rerun from its DCR columns
+
+  python run_bricks.py 000-063 --dry-run          # count bricks per slice and source
+  python run_bricks.py 000-015 --workers 128      # run
+  python run_bricks.py 064 --input-root DIR       # use only DIR (testing); add --from-archive if DIR is archive-like
 Per-brick logs: <out-root>/<deg>/logs/<brick>.log; failures listed in <out-root>/<deg>/failed.txt
 """
 import os
 import sys
+import gc
 import time
 import argparse
-import subprocess
+import logging
+import warnings
+import contextlib
+import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-PY_FILES = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "py_files"))
-DEFAULT_INPUT_ROOT = "/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick"
-DEFAULT_ARCHIVE_ROOT = "/pscratch/sd/n/nelfalou/archive/legacypm-catalogue"
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "py_files")))
+
+# name -> (root, is_archive), in priority order
+SOURCES = {
+    "scratch": ("/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick", False),
+    "cfs": ("/global/cfs/cdirs/cosmo/work/users/dstn/forced-motions-dr10/forced-brick", False),
+    "archive": ("/pscratch/sd/n/nelfalou/archive/legacypm-catalogue", True),
+}
 DEFAULT_OUT_ROOT = "/pscratch/sd/n/nelfalou/legacypm-catalogue"
 
-
-def nonempty(path):
-    return os.path.isfile(path) and os.path.getsize(path) > 0
-
-
-def find_bricks(src_dir, new_dir, from_archive):
-    bricks = []
-    for fn in sorted(os.listdir(src_dir)):
-        if not (fn.startswith("forced-") and fn.endswith(".fits")) or not nonempty(os.path.join(src_dir, fn)):
-            continue
-        brick = fn[-13:-5]
-        needed = f"tractor-pm-{brick}.fits" if from_archive else f"tractor-forced-{brick}.fits"
-        if not nonempty(os.path.join(src_dir, needed)):
-            continue
-        if nonempty(os.path.join(new_dir, f"tractor-pm-{brick}.fits")):
-            continue  # already finished
-        bricks.append(brick)
-    return bricks
+# set in the parent before forking, shared (copy-on-write) by the workers
+STATE = {}
 
 
-def brick_commands(brick, src_dir, new_dir, from_archive):
-    fn = f"forced-{brick}.fits"
-    tractor_dir = new_dir if from_archive else src_dir
-    first = (["prep_archive_rerun.py", fn, new_dir, src_dir] if from_archive
-             else ["brick_DCR.py", fn, new_dir, src_dir])
-    return [first,
-            ["brick_ringmaps.py", fn, new_dir, new_dir],
-            ["brick_lateralmaps.py", fn, new_dir, new_dir, tractor_dir],
-            ["create_brick_catalogue.py", fn, new_dir, new_dir, tractor_dir]]
+def parse_degrees(items):
+    out = []
+    for item in items:
+        lo, _, hi = item.partition("-")
+        out += [f"{d:03d}" for d in range(int(lo), int(hi or lo) + 1)]
+    return out
 
 
-def run_brick(brick, src_dir, new_dir, from_archive):
+def listing(path):
+    """{filename: size} for a directory, {} if it doesn't exist."""
+    try:
+        return {e.name: e.stat().st_size for e in os.scandir(path)}
+    except FileNotFoundError:
+        return {}
+
+
+def find_bricks(degree, sources, new_dir):
+    """[(brick, src_dir, is_archive)] for unfinished bricks, each from the first source that has complete inputs."""
+    done = {f[11:19] for f, size in listing(new_dir).items() if f.startswith("tractor-pm-") and size > 0}
+    chosen = {}
+    for root, is_archive in sources:
+        src_dir = os.path.join(root, degree) + "/"
+        files = listing(src_dir)
+        needed = "tractor-pm-{}.fits" if is_archive else "tractor-forced-{}.fits"
+        for f, size in files.items():
+            if not (f.startswith("forced-") and f.endswith(".fits")) or size == 0:
+                continue
+            brick = f[-13:-5]
+            if brick in chosen or brick in done or files.get(needed.format(brick), 0) == 0:
+                continue
+            chosen[brick] = (src_dir, is_archive)
+    return [(b,) + chosen[b] for b in sorted(chosen)], len(done)
+
+
+def load_state(need_dcr):
+    if need_dcr:
+        import brick_DCR  # loads the CCD table
+        STATE["dcr"] = brick_DCR
+    import brick_ringmaps, brick_lateralmaps, create_brick_catalogue, prep_archive_rerun
+    STATE.update(rm=brick_ringmaps, lm=brick_lateralmaps, pm=create_brick_catalogue, prep=prep_archive_rerun,
+                 tweaks=brick_ringmaps.make_splines(brick_ringmaps.get_ringmaps(brick_ringmaps.RINGMAPS_PATH)),
+                 lm_model=brick_lateralmaps.load_lateral_model())
+
+
+def worker_init():
+    warnings.simplefilter("ignore")
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+
+
+def run_brick(brick, src_dir, new_dir, is_archive):
     t0 = time.time()
-    with open(os.path.join(new_dir, "logs", f"{brick}.log"), "w") as log:
-        for cmd in brick_commands(brick, src_dir, new_dir, from_archive):
-            log.write(f"### {' '.join(cmd)}\n")
-            log.flush()
-            r = subprocess.run([sys.executable, os.path.join(PY_FILES, cmd[0])] + cmd[1:],
-                               stdout=log, stderr=subprocess.STDOUT)
-            if r.returncode != 0:
-                return brick, f"{cmd[0]} exit {r.returncode}", time.time() - t0
+    fn = f"forced-{brick}.fits"
+    tractor_dir = new_dir if is_archive else src_dir
+    S = STATE
+    steps = [("prep", lambda: S["prep"].prep_brick(fn, new_dir, src_dir)) if is_archive
+             else ("DCR", lambda: S["dcr"].create_brick_corrected_data(fn, new_dir, src_dir)),
+             ("RM", lambda: S["rm"].create_brick_corrected_data(fn, new_dir, new_dir, S["tweaks"])),
+             ("LM", lambda: S["lm"].create_brick_corrected_data(fn, new_dir, new_dir, tractor_dir, S["lm_model"])),
+             ("PM", lambda: S["pm"].create_brick_catalogue(fn, new_dir, new_dir, tractor_dir))]
+    root = logging.getLogger()
+    with open(os.path.join(new_dir, "logs", f"{brick}.log"), "w") as log, contextlib.redirect_stdout(log):
+        handler = logging.StreamHandler(log)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        root.addHandler(handler)
+        try:
+            print(f"### {brick} from {src_dir} ({'archive' if is_archive else 'forced photometry'})", flush=True)
+            for name, step in steps:
+                try:
+                    step()
+                except Exception as e:
+                    logging.exception(f"{name} step failed")
+                    return brick, f"{name}: {type(e).__name__}: {e}", time.time() - t0
+        finally:
+            root.removeHandler(handler)
     return brick, None, time.time() - t0
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("degrees", nargs="+", help="RA degree slices, e.g. 060 061")
-    ap.add_argument("--from-archive", action="store_true")
-    ap.add_argument("--input-root", default=None)
+    ap.add_argument("degrees", nargs="+", help="RA degree slices or ranges, e.g. 060 061 or 000-063")
+    ap.add_argument("--sources", default=",".join(SOURCES), help=f"comma-separated, in priority order (default all)")
+    ap.add_argument("--input-root", default=None, help="use only this root (overrides --sources)")
+    ap.add_argument("--from-archive", action="store_true", help="with --input-root: it holds archive-style bricks")
     ap.add_argument("--out-root", default=DEFAULT_OUT_ROOT)
     ap.add_argument("--workers", type=int, default=64)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    input_root = args.input_root or (DEFAULT_ARCHIVE_ROOT if args.from_archive else DEFAULT_INPUT_ROOT)
+    sources = ([(args.input_root, args.from_archive)] if args.input_root
+               else [SOURCES[s] for s in args.sources.split(",")])
+    degrees = parse_degrees(args.degrees)
     jobs = []
-    for degree in args.degrees:
-        src_dir = os.path.join(input_root, degree) + "/"
+    for degree in degrees:
         new_dir = os.path.join(args.out_root, degree) + "/"
-        os.makedirs(os.path.join(new_dir, "logs"), exist_ok=True)
-        bricks = find_bricks(src_dir, new_dir, args.from_archive)
-        print(f"degree {degree}: {len(bricks)} bricks to run ({src_dir} -> {new_dir})", flush=True)
-        jobs += [(b, src_dir, new_dir) for b in bricks]
+        found, n_done = find_bricks(degree, sources, new_dir)
+        by_src = {}
+        for _, src_dir, _ in found:
+            by_src[src_dir] = by_src.get(src_dir, 0) + 1
+        print(f"degree {degree}: {n_done} done, {len(found)} to run "
+              + ", ".join(f"{n} from {s}" for s, n in by_src.items()), flush=True)
+        if found and not args.dry_run:
+            os.makedirs(os.path.join(new_dir, "logs"), exist_ok=True)
+        jobs += [(b, s, new_dir, a) for b, s, a in found]
+    print(f"total to run: {len(jobs)}", flush=True)
     if args.dry_run or not jobs:
         sys.exit(0)
 
+    t0 = time.time()
+    load_state(need_dcr=any(not a for *_, a in jobs))
+    print(f"loaded calibration tables in {time.time() - t0:.0f} s", flush=True)
+    gc.freeze()  # keep the shared tables' pages from being copied into every worker by the garbage collector
+
     n_ok, failed = 0, []
-    with ProcessPoolExecutor(args.workers) as ex:
-        futs = [ex.submit(run_brick, b, s, n, args.from_archive) for b, s, n in jobs]
+    with ProcessPoolExecutor(args.workers, mp_context=mp.get_context("fork"), initializer=worker_init) as ex:
+        futs = [ex.submit(run_brick, *job) for job in jobs]
         for i, fut in enumerate(as_completed(futs), 1):
             brick, err, dt = fut.result()
             if err:
@@ -96,7 +163,8 @@ if __name__ == "__main__":
             else:
                 n_ok += 1
                 print(f"[{i}/{len(jobs)}] done {brick} ({dt:.0f} s)", flush=True)
-    for degree in args.degrees:  # bricks are named after their RA degree, e.g. 0600m050 -> 060
-        with open(os.path.join(args.out_root, degree, "failed.txt"), "w") as f:
-            f.writelines(f"{b} {e}\n" for b, e in failed if b[:3] == degree)
-    print(f"finished: {n_ok} ok, {len(failed)} failed", flush=True)
+    for degree in degrees:  # bricks are named after their RA degree, e.g. 0600m050 -> 060
+        if os.path.isdir(os.path.join(args.out_root, degree)):
+            with open(os.path.join(args.out_root, degree, "failed.txt"), "w") as f:
+                f.writelines(f"{b} {e}\n" for b, e in failed if b[:3] == degree)
+    print(f"finished: {n_ok} ok, {len(failed)} failed in {(time.time() - t0) / 3600:.2f} h", flush=True)
