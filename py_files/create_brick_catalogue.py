@@ -60,8 +60,8 @@ def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, obj_filt, B):
     A[N:, 0] = plx_ddec / ddec_error[obj_filt]
     A[:N, 1] = dt / dra_error[obj_filt]
     A[N:, 2] = dt / ddec_error[obj_filt]
-    A[:N, 3] = np.ones(N)
-    A[N:, 4] = np.ones(N)
+    A[:N, 3] = 1 / dra_error[obj_filt]  # offset columns must be weighted like the data (B = d/sigma)
+    A[N:, 4] = 1 / ddec_error[obj_filt]
 
     cond = np.linalg.cond(A)
     if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
@@ -84,8 +84,8 @@ def pm_lsq(N, dt, dra_error, ddec_error, obj_filt, B):
     A = np.zeros((2 * N, 4))
     A[:N, 0] = dt / dra_error[obj_filt]
     A[N:, 1] = dt / ddec_error[obj_filt]
-    A[:N, 2] = np.ones(N)
-    A[N:, 3] = np.ones(N)
+    A[:N, 2] = 1 / dra_error[obj_filt]  # offset columns must be weighted like the data (B = d/sigma)
+    A[N:, 3] = 1 / ddec_error[obj_filt]
 
     cond = np.linalg.cond(A)
     if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
@@ -140,6 +140,24 @@ def calculate_pm(forced, tractor, objid, dra_error, ddec_error, original_data=Fa
     return X_plx, variances_plx, X, variances, ref_mjd
     
     
+def reference_motion(tractor, objid, ref_mjd):
+    """The forced photometry moves every source with ref_epoch > 0 (Gaia stars) to each image's epoch using the
+    catalogue's pmra, pmdec and parallax (legacypipe forced_photom, --move-gaia), so for those sources the fitted
+    dra/ddec trends are residuals from the Gaia motion. Returns the reference position at ref_mjd (proper motion
+    only, no parallax displacement), and the motion and its variances to add back to the fit so that our PM and
+    parallax columns are absolute for every source. For sources without a reference motion: tractor ra/dec, zeros.
+    """
+    ra, dec = tractor.ra[objid], tractor.dec[objid]
+    zero = {'pmra': 0., 'pmdec': 0., 'parallax': 0.}
+    if not tractor.ref_epoch[objid] > 0:
+        return ra, dec, zero, dict(zero)
+    pm = {k: float(tractor[k][objid]) for k in ('pmra', 'pmdec', 'parallax')}
+    var = {k: (1 / float(tractor[k + '_ivar'][objid]) if tractor[k + '_ivar'][objid] > 0 else 0.)
+           for k in ('pmra', 'pmdec', 'parallax')}
+    ra0, dec0 = radec_at_mjd(ra, dec, float(tractor.ref_epoch[objid]), pm['pmra'], pm['pmdec'], 0., ref_mjd)
+    return float(np.atleast_1d(ra0)[0]), float(np.atleast_1d(dec0)[0]), pm, var
+
+
 def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_data=False):
     logger.info(f"Starting PM catalogue generation for brick: {filename}")
     start_time = time.time()
@@ -206,28 +224,42 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
 
         success = True
 
+        # reference motion the forced photometry already moved this source with (zero unless it is a Gaia star)
+        ra0, dec0, ref_pm, ref_var = reference_motion(tractor_table[1].data, objid, rmjd)
+        cosdec = np.cos(np.deg2rad(dec0))
+
         if X_plx is None:
             success = False
             dat = forced_table[1].data.full_fit_dra[forced_table[1].data.objid == objid]
             if dat.size != 0 and sum(dat) != 0:
                 fails.append(objid)
         else:
-            parallax[i], pmra_plx[i], pmdec_plx[i], ra_offset, dec_offset = X_plx # in mas, mas/yr
-            new_ra_plx[i] = tractor_table[1].data.ra[objid] + ra_offset / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600
-            new_dec_plx[i] = tractor_table[1].data.dec[objid] + dec_offset / 1000 / 3600
-            parallax_ivar[i], pmra_plx_ivar[i], pmdec_plx_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / var_plx
-            new_ra_plx_ivar[i] = 1 / ((1 / np.sqrt(ra_offset_ivar)) / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600)**2
-            new_dec_plx_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
+            dplx, dpmra, dpmdec, ra_offset, dec_offset = X_plx # in mas, mas/yr; relative to the reference motion
+            parallax[i] = dplx + ref_pm['parallax']
+            pmra_plx[i] = dpmra + ref_pm['pmra']
+            pmdec_plx[i] = dpmdec + ref_pm['pmdec']
+            new_ra_plx[i] = ra0 + ra_offset / 1000 / cosdec / 3600
+            new_dec_plx[i] = dec0 + dec_offset / 1000 / 3600
+            v_plx, v_pmra, v_pmdec, ra_offset_var, dec_offset_var = var_plx
+            parallax_ivar[i] = 1 / (v_plx + ref_var['parallax'])
+            pmra_plx_ivar[i] = 1 / (v_pmra + ref_var['pmra'])
+            pmdec_plx_ivar[i] = 1 / (v_pmdec + ref_var['pmdec'])
+            new_ra_plx_ivar[i] = 1 / (np.sqrt(ra_offset_var) / 1000 / cosdec / 3600)**2
+            new_dec_plx_ivar[i] = 1 / (np.sqrt(dec_offset_var) / 1000 / 3600)**2
 
         if X is None:
             success = False
         else:
-            pmra[i], pmdec[i], ra_offset, dec_offset = X # in mas, mas/yr
-            new_ra[i] = tractor_table[1].data.ra[objid] + ra_offset / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600
-            new_dec[i] = tractor_table[1].data.dec[objid] + dec_offset / 1000 / 3600
-            pmra_ivar[i], pmdec_ivar[i], ra_offset_ivar, dec_offset_ivar = 1 / var
-            new_ra_ivar[i] = 1 / ((1 / np.sqrt(ra_offset_ivar)) / 1000 / np.cos(np.deg2rad(tractor_table[1].data.dec[objid])) / 3600)**2
-            new_dec_ivar[i] = 1 / ((1 / np.sqrt(dec_offset_ivar)) / 1000 / 3600)
+            dpmra, dpmdec, ra_offset, dec_offset = X # in mas, mas/yr; relative to the reference motion
+            pmra[i] = dpmra + ref_pm['pmra']
+            pmdec[i] = dpmdec + ref_pm['pmdec']
+            new_ra[i] = ra0 + ra_offset / 1000 / cosdec / 3600
+            new_dec[i] = dec0 + dec_offset / 1000 / 3600
+            v_pmra, v_pmdec, ra_offset_var, dec_offset_var = var
+            pmra_ivar[i] = 1 / (v_pmra + ref_var['pmra'])
+            pmdec_ivar[i] = 1 / (v_pmdec + ref_var['pmdec'])
+            new_ra_ivar[i] = 1 / (np.sqrt(ra_offset_var) / 1000 / cosdec / 3600)**2
+            new_dec_ivar[i] = 1 / (np.sqrt(dec_offset_var) / 1000 / 3600)**2
 
         ref_mjd[i] = rmjd
         pm_flag[i] = 1 if success else 0  # only mark success when both fits (with & without parallax) succeeded
@@ -247,20 +279,20 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     pm_table[1].columns.add_col(fits.Column(name="pmdec_plx_ivar", array=pmdec_plx_ivar, format='E', unit='(mas/yr)^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="parallax_new", array=parallax, format='E', unit='mas'))
     pm_table[1].columns.add_col(fits.Column(name="parallax_new_ivar", array=parallax_ivar, format='E', unit='mas^(-2)'))
-    pm_table[1].columns.add_col(fits.Column(name="new_ra_plx", array=new_ra_plx, format='E', unit='deg'))
-    pm_table[1].columns.add_col(fits.Column(name="new_dec_plx", array=new_dec_plx, format='E', unit='deg'))
+    pm_table[1].columns.add_col(fits.Column(name="new_ra_plx", array=new_ra_plx, format='D', unit='deg'))
+    pm_table[1].columns.add_col(fits.Column(name="new_dec_plx", array=new_dec_plx, format='D', unit='deg'))
     pm_table[1].columns.add_col(fits.Column(name="new_ra_plx_ivar", array=new_ra_plx_ivar, format='E', unit='deg^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="new_dec_plx_ivar", array=new_dec_plx_ivar, format='E', unit='deg^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="pmra_no_plx", array=pmra, format='E', unit='mas/yr'))
     pm_table[1].columns.add_col(fits.Column(name="pmra_no_plx_ivar", array=pmra_ivar, format='E', unit='(mas/yr)^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="pmdec_no_plx", array=pmdec, format='E', unit='mas/yr'))
     pm_table[1].columns.add_col(fits.Column(name="pmdec_no_plx_ivar", array=pmdec_ivar, format='E', unit='(mas/yr)^(-2)'))
-    pm_table[1].columns.add_col(fits.Column(name="new_ra_no_plx", array=new_ra, format='E', unit='deg'))
-    pm_table[1].columns.add_col(fits.Column(name="new_dec_no_plx", array=new_dec, format='E', unit='deg'))
+    pm_table[1].columns.add_col(fits.Column(name="new_ra_no_plx", array=new_ra, format='D', unit='deg'))
+    pm_table[1].columns.add_col(fits.Column(name="new_dec_no_plx", array=new_dec, format='D', unit='deg'))
     pm_table[1].columns.add_col(fits.Column(name="new_ra_no_plx_ivar", array=new_ra_ivar, format='E', unit='deg^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="new_dec_no_plx_ivar", array=new_dec_ivar, format='E', unit='deg^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="pm_flag", array=pm_flag, format='E'))
-    pm_table[1].columns.add_col(fits.Column(name="ref_mjd", array=ref_mjd, format='E'))
+    pm_table[1].columns.add_col(fits.Column(name="ref_mjd", array=ref_mjd, format='D'))
 
     print("done! now writing to file...")
 

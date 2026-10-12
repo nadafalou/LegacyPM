@@ -308,6 +308,8 @@ where $(P_{\alpha,i}, P_{\delta,i})$ are the parallax factors: the displacement,
 
 We solve both models by weighted linear least squares. The design matrix is weighted by the per-measurement uncertainties (below), and the parameter covariance is $(\mathbf{A}^{\rm T}\mathbf{A})^{-1}$ for the weighted design matrix $\mathbf{A}$. We report its diagonal as inverse variances. The fitted offsets $(\Delta\alpha_{*,0}, \Delta\delta_0)$ are added to the Tractor position to give an updated position at the reference epoch.
 
+Sources with a reference-catalogue astrometric solution (in practice Gaia stars, with Gaia DR3 proper motion, parallax and reference epoch J2016.0) are treated differently by the forced photometry: in each image, the source is placed at its Gaia-predicted position at that epoch, including proper motion and parallax. The measured offsets of these sources are therefore residuals with respect to the Gaia astrometric solution, and the fit above yields $\Delta\mu$ and $\Delta\varpi$ relative to Gaia. To make the catalogue uniform, we add the Gaia values back, $\mu = \mu_{\rm Gaia} + \Delta\mu$ and $\varpi = \varpi_{\rm Gaia} + \Delta\varpi$, adding the Gaia variances to ours. The updated position is the Gaia position propagated to $t_{\rm ref}$ (proper motion only), plus the fitted offset. All proper motions, parallaxes and positions in our catalogue are thus absolute, while the original Tractor columns (including the Gaia \texttt{pmra}, \texttt{pmdec} and \texttt{parallax}) are kept unchanged. A star's measurement relative to Gaia is simply the difference of the two.
+
 We choose the reference epoch $t_{\rm ref}$ for each star as the inverse-variance-weighted mean epoch of its measurements. This choice decorrelates the positional offset from the proper motion. Because of it, $t_{\rm ref}$ differs from star to star and from the Gaia DR3 reference epoch (J2016.0), so we store it in the catalogue (\texttt{ref\_mjd}).
 
 \subsection{Measurement uncertainties}
@@ -320,7 +322,7 @@ where $\sigma_{\rm sys}$ is the bright-star floor of the fully corrected positio
 
 \subsection{Sample selection and quality cuts}
 
-We fit only sources classified as point sources (Tractor \texttt{TYPE = PSF}). This includes Gaia stars, which we use for validation, as well as fainter point sources not detected by Gaia. \todo{For Gaia stars, the forced-photometry offsets are relative to the Gaia-predicted (moving) position, so the fit yields the PM \emph{relative to Gaia}; describe this and whether the catalogue reports $\mu_{\rm Gaia} + \Delta\mu$.} For a fit to be meaningful, a star must have enough measurements spread over a long enough time baseline. We require
+We fit only sources classified as point sources (Tractor \texttt{TYPE = PSF}). This includes Gaia stars, which we use for validation, as well as fainter point sources not detected by Gaia. For a fit to be meaningful, a star must have enough measurements spread over a long enough time baseline. We require
 \begin{itemize}
     \item at least $N_{\min} = 5$ measurements, and
     \item a time baseline $t_{\max} - t_{\min} \geq 180$\,d.

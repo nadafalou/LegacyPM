@@ -22,9 +22,13 @@ Corrections are applied **in sequence**; each map is built on the previous stage
 4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `lm_full_fit_*`, PSF sources only,
    4-param (PM) and 5-param (PM+parallax) fits; 14.8 mas floor added in quadrature to per-epoch errors;
    cuts MIN_EPOCHS=5, MIN_BASELINE_DAYS=180, cond<1e8.
+   Gaia stars (ref_epoch > 0) are measured relative to their Gaia motion by the forced photometry; the Gaia PM/parallax
+   is added back, so all output PMs, parallaxes and positions (float64) are absolute. Catalogues made before
+   2026-10-12 (incl. the archive) have relative Gaia PMs, unweighted offset terms and wrong positions -> rerun.
 
-Orchestration: FireWorks (`fireworks/`, launchpad on MongoDB at NERSC) + Docker image (`docker/`). How to run is
-**not yet documented** -- see PLAN.md "Runbook" section.
+How to run everything: **RUNBOOK.md**. Batch runs: `slurm/run_bricks.sbatch` (one node, Shifter image
+`docker:nadafalou/legacypm:5`, no database). FireWorks (`fireworks/`, MongoDB launchpad) is the older route; its Mongo
+login currently fails. The image provides software only; the code always runs from this clone's `py_files/`.
 
 ## Data locations (Perlmutter)
 - Current analysis sample: `/pscratch/sd/n/nelfalou/archive/legacypm-catalogue/060-063/` -- 548 valid
@@ -33,12 +37,13 @@ Orchestration: FireWorks (`fireworks/`, launchpad on MongoDB at NERSC) + Docker 
   `/pscratch/sd/d/dstn/forced-motions-3/` run) and `/pscratch/sd/n/nelfalou/{dcr,rm,lm}-gaia-stars/` are gone (purged/empty).
   Maps survive at `/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/{rm,lm}-corrected-forced-motions/`.
   Any rebuild must pull Gaia stars (`ref_cat == 'GE'`) from the per-brick `forced-*` files, as `run/lateral-model.ipynb` does.
-- `/pscratch/sd/n/nelfalou/legacypm-catalogue/<deg>/` dirs are now empty (notebooks still point there -- repoint to archive).
+- `/pscratch/sd/n/nelfalou/legacypm-catalogue/<deg>/` (purged; recreated by new runs) is the default output root of
+  `slurm/run_bricks.py`. Notebooks still point at old dirs there -- repoint them.
 
 ## Constraints
-- New catalogue files can't be generated right now: waiting on Dustin's forced-photometry regeneration.
-  Work with the 548 archived bricks. The archived bricks predate the epoch/baseline guard -> apply that cut at
-  analysis time (recompute N_epochs/baseline from the `forced-*` files).
+- Dustin delivered the forced photometry for RA 060-063 (complete with the archive) on 2026-10-10. The 548 archived
+  bricks predate the current code -> rerun them with `--from-archive` rather than analysing them as they are.
+- pscratch is purged: copy finished output to CFS.
 - **All paper figures must be produced by notebooks in `run/`** (`err-plots.ipynb` is the main one), saved into
   `writeup/plots/`. Don't make figures with ad hoc scripts.
 - Heavy analysis (loading hundreds of bricks) should run on a compute node / NERSC Jupyter, not a login node.

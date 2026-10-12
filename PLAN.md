@@ -1,6 +1,6 @@
 # LegacyPM progress tracker
 
-Last updated: 2026-10-11. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
+Last updated: 2026-10-12. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
 
 ## Paper (writeup/main.tex)
 
@@ -45,22 +45,52 @@ Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/lega
 - [!] High-PM / non-Gaia candidates -- needs analysis-time epoch/baseline cut on the 548 bricks
 - [ ] Abstract, conclusion, keywords
 
-## Open questions (for Nada / Dustin)
+## Open questions (for Nada / Dustin) -- answers 2026-10-12
 - 14.8 mas floor: not computed in any saved cell; matches the ~15 mas bright-end plateau of F6. Note F6 plots the
   median of the *2-D* offset hypot(dra, ddec); for a 2-D Gaussian that's ≈1.18 σ per axis, so the per-axis floor
-  would be ≈12.6 mas. Decide whether to re-derive it properly (and how it interacts with the pull-width inflation).
-- K_i = K_z = 1 mas/mag: measured, or a placeholder? Paper currently says "small".
-- Ring maps: "461 million measurements, ~6,400 per bin per map" is internally inconsistent (128x256 bins x ~240
-  CCD-filter maps -> ~60 per bin). Confirm which number is right.
-- Source of the (g-i) = -0.56 + 1.34 (BP-RP) transformation used for the DCR reference colour (needs a citation).
-- Lateral colour pivot c0 = 1.642: is it the median g-i of the Gaia sample?
-- Which Legacy Surveys data releases / imaging epochs (date range) go into the forced photometry? Needed for baseline stats.
+  would be ≈12.6 mas. **Nada: redo the error analysis for the paper, but only after more RA slices are processed.**
+- K_i = K_z = 1 mas/mag: **Nada: negligible by design; we don't correct those bands' colours. Keep as is.**
+- Ring maps "461 million measurements, ~6,400 per bin per map": **can't be verified any more**. The input star files
+  are purged and ringmaps.fits stores no counts. 461e6 / (32,768 bins x ~244 CCD-filter maps) ≈ 58 per bin, so
+  "6,400" is wrong unless 461M is. Suggest: drop the per-bin number (or say ~60) and keep 461M only if Nada trusts it.
+- (g-i) = -0.56 + 1.34 (BP-RP) (brick_DCR.py line 103, main.tex DCR section): Nada: Dustin supplied it, probably from
+  the Legacy Surveys / DECam Community Pipeline calibration. **Ask Dustin for the reference.**
+- Lateral pivot c0 = 1.642 (`median_color` in brick_lateralmaps.py since the Nov 2024 initial commit, no record of how
+  it was computed; also in main.tex eq. lateral + run/lateral-model.ipynb): presumably the median g-i of the 2024 Gaia
+  calibration sample. In the DR10 archive (60 bricks) the median Gaia-star g-i is 1.88 per star and 1.77 per σ<10 mas
+  measurement. Small effect (a constant-in-colour offset of ~0.13 x the lateral shift, < ~4 mas at the g-band field
+  edge, partly absorbed by the ring maps). Optional check: refit lateral-model.ipynb with c0 = 1.77 and compare
+  held-out scatter. Main.tex wording "approximately the median colour of the calibration sample" is fine.
+- Imaging date range (archive sample, 60 bricks, RA 60-64): **2013-11-09 to 2021-03-26** (MJD 56605-59299).
+- **DONE 2026-10-12 (Nada: option a): Gaia-star PMs are now absolute.** legacypipe forced photometry (--move-gaia)
+  places every source with ref_epoch > 0 at its Gaia-predicted position (PM + parallax) in each image, so the fit gives
+  residuals from Gaia. create_brick_catalogue.reference_motion() adds Gaia pmra/pmdec/parallax back (variances added in
+  quadrature) and starts the position from Gaia propagated to ref_mjd (PM only). Our columns are now absolute for every
+  source; tractor columns (pmra, pmdec, parallax, ref_epoch) unchanged, so ours - tractor = residual from Gaia.
+  pm_analysis.py / err-plots already compare ours - Gaia, which is now the right comparison (it was wrong on the archive).
+  main.tex sec:pm_method updated (todo removed).
 
 ## Bugs / suspicious things found
-- FIXED 2026-10-10 (uncommitted): create_brick_catalogue.py crashed with NameError on the first successful fit of any
+- FIXED 2026-10-10: create_brick_catalogue.py crashed with NameError on the first successful fit of any
   brick -- commit b0c80d0 (2025-05-02) renamed the loop variables to var_plx/var but lines 218/228 still used
-  variances_plx/variances. So the Sept 2025 archive must have been produced by an older copy of the code (Docker image?)
-  -- relevant for the runbook: check which code version the Docker image actually runs.
+  variances_plx/variances. Resolved mystery (2026-10-12): the archive was made by FireWorks in Feb-Mar 2025 (launcher
+  dirs, launched from the ~/LegacyPM home clone), i.e. *before* b0c80d0; the Sept 2025 file dates are copy dates.
+- FIXED 2026-10-12 (create_brick_catalogue.py; all need the rerun):
+  * **Offset columns of the design matrix were unweighted** (np.ones instead of 1/sigma, since the initial commit), so the
+    model fitted was d_i = mu t_i + c sigma_i. Positions (new_ra/new_dec) were off by hundreds of mas; PMs slightly
+    biased where per-epoch errors change with time. Effect of the fix on PMs (4 bricks): non-Gaia median |dPM| 0.1
+    (r 20-22), 0.2 (r 22-23), 0.8 mas/yr (r 23-24) vs sigma 5 / 8 / 28 -> <=3% of sigma; Gaia-star scatter unchanged.
+  * Dec position ivar was missing a square (new_dec_*_ivar ~100x too small).
+  * new_ra/new_dec and ref_mjd were float32 (14 mas steps at RA 60 deg) -> now float64 ('D').
+  * Validation (4 archive bricks, e2e-test/catcheck/check_cat.py): Gaia positions at ref_mjd agree with Gaia to 0.5 mas
+    median, 5-6 mas robust sigma (before: ~350 mas sigma); Gaia PM - ours robust sigma 3.5 / 2.9 / 4.6 mas/yr for
+    G 14-18 / 18-20 / 20-21.5, pulls 1.11 / 0.88 / 1.24; parallax pulls 0.9-1.06; non-Gaia PM/plx identical apart
+    from the weighting fix.
+- FireWorks: my_qadapter.yaml used `rlaunch singlerun` (not a command; fixed to `singleshot` + `-l` launchpad file,
+  2026-10-12, untested). **MongoDB authentication fails** with the current credentials (2026-10-12) -> FireWorks is
+  blocked until NERSC resets them. The Slurm driver (slurm/) works without it. See RUNBOOK.md.
+- DCR: objects with no g-i colour get g_i_colour = 0 (brick_DCR.py line 102, `colormap.get(objid, 0.)`), i.e. they are
+  corrected as if g-i = 0. Check how many PSF objects this affects.
 - err-plots cell 8 (= slide 20 "Error Analysis"): labels "DCR corrected" and "DCR+RM corrected" are swapped
   (scat3 = rm is labelled DCR, scat2 = dcr is labelled DCR+RM).
 - create-maps.ipynb builds lateral maps with `dc = (T.flux_g - T.flux_i)` (flux difference!) but
@@ -76,9 +106,10 @@ Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/lega
 - Older 2024 test run on CFS: `/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/{dcr,rm,lm}-corrected-forced-motions/`
   = RA 001-040, |Dec| < 4.7 (6,240 bricks, `forced-brickwise-*`, Sept 2024, pre-DR10 forced run). No PM catalogues.
 - Request list for Dustin: `missing_bricks.txt` (repo root; regenerate if his run progresses).
-- **Dustin's regeneration (in progress):** `/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/` is the archive's
-  301 failed (0-byte) bricks, rerun on DR10. 123 done since 2026-09-17. Of the rest, 6 are on CFS, so **176 still
-  needed** (P1 in missing_bricks.txt). Decision (Nada, 2026-10-10): everything is DR10 data, so mixing runs is fine.
+- **Dustin's regeneration: delivered 2026-10-09/10.** `/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/` now has
+  060: 914, 061: 1037, 062: 1015, 063: 1071 bricks (all with tractor-forced); with the 548 archive bricks that is all
+  4,585 DR10 bricks in 060-063. Also 064: 83, 065: 49, and a handful in 020-023, 051-059, 066-069 (the P1 list).
+  Re-check missing_bricks.txt against this before asking Dustin for anything else.
 - 29 bricks have a corrected forced file but no PM catalogue (26 of them in 063). Only 4 have their
   tractor-forced input available again (0609p067, 0623m300, 0622p065, 0630m797); the other 25 need tractor-forced from Dustin.
 - Older run for RA 000-057 still exists on CFS: `/global/cfs/cdirs/cosmo/work/users/dstn/forced-motions-dr10/forced-brick/`
@@ -185,5 +216,15 @@ Proposed fix (remaining):
 - If rebuilt: keep the 16-px bins only if stars per bin >> 100; otherwise consider a smoother model (as for LM).
   Validate with the same held-out star-level test as lateral-model.ipynb.
 
-## Runbook (issue #1 -- how to run things) -- TODO
-To be reconstructed: FireWorks launchpad/qadapter, Docker image, notebook entry points.
+## Runbook (issue #1) -- see RUNBOOK.md (written 2026-10-12)
+- Slurm driver `slurm/run_bricks.py` + `slurm/run_bricks.sbatch` (no FireWorks needed). Tested on a login node in the
+  Shifter image (archive mode and new-brick mode). Not yet submitted as a batch job.
+- FireWorks workflow `fireworks/legacypm_workflow.py` now takes slices/options on the command line (`--from-archive`,
+  `--input-root`, `--out-root`, `--dry-run`) and calls the scripts by absolute path. Blocked by MongoDB auth.
+- New `py_files/prep_archive_rerun.py`: rebuilds RM/LM/PM inputs from the archive (raw inputs are purged).
+- End-to-end test scripts saved to `run/e2e/` (were in the session scratchpad).
+
+## Next run (code is ready as of 2026-10-12)
+1. `sbatch run_bricks.sbatch 060 061 062 063 --from-archive` (548 bricks) and `sbatch run_bricks.sbatch 060 061 062 063`
+   (4,037 new bricks) -> complete 060-063 with current code.
+2. rsync output to CFS. 3. Repoint notebooks, then figures (Step 2) and error analysis (14.8 mas floor).

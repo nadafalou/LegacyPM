@@ -1,6 +1,6 @@
 _fw_name: CommonAdapter
 _fw_q_type: SLURM
-rocket_launch: shifter --image=docker:nadafalou/legacypm:5 rlaunch singlerun
+rocket_launch: shifter --image=docker:nadafalou/legacypm:5 rlaunch -l /pscratch/sd/n/nelfalou/LegacyPM/fireworks/my_launchpad.yaml singleshot
 
 nodes: 1
 ntasks: 1
