@@ -3,7 +3,8 @@ Reading ~80k tractor-pm / forced files in a notebook is too slow, so this reads 
 into <out-root>/combined/:
 
   pm-<deg>.fits           PSF objects with a successful PM fit (pm_flag == 1): identifiers, positions, fluxes, Gaia
-                          columns, our PM/parallax columns, plus n_epochs / baseline_days (epochs with a valid fit)
+                          columns, our PM/parallax columns, plus n_epochs / baseline_days (epochs with a valid fit) and
+                          objid_clash (see read_brick; drop these, ~0.005%). Only each brick's own sources are kept.
   gaia-objects-<deg>.fits all Gaia stars (ref_cat GE), same columns, any pm_flag
   gaia-epochs-<deg>.fits  per-epoch forced-photometry rows of those Gaia stars, raw + DCR/RM/LM-corrected positions
   bricks-<deg>.fits       one row per brick: centre, object counts, median epochs and baseline
@@ -59,23 +60,37 @@ def read_brick(args):
         F = fitsio.read(os.path.join(deg_dir, f"forced-{brick}.fits"), columns=EPOCH_COLS)
     except Exception as e:
         return brick, None, f"{type(e).__name__}: {e}"
-    # epochs with a valid fit, per object (objid indexes tractor rows)
-    v = F['full_fit_dra_ivar'] > 0
-    o = F['objid'][v]
+    # Tractor catalogues can have rows from neighbouring bricks appended at the end (e.g. large SGA galaxies), with
+    # their own brickid and objid; forced files can include those sources' epochs too. Match on (brickid, objid).
     n = len(T)
+    own_id = np.bincount(T['brickid'] - T['brickid'].min()).argmax() + T['brickid'].min()
+    own = T['brickid'] == own_id
+    tkey = (T['brickid'].astype(np.int64) << 32) | T['objid'].astype(np.int64)
+    fkey = (F['brickid'].astype(np.int64) << 32) | F['objid'].astype(np.int64)
+    srt = np.argsort(tkey)
+    pos = np.clip(np.searchsorted(tkey[srt], fkey), 0, max(n - 1, 0))
+    frow = np.where(tkey[srt][pos] == fkey, srt[pos], -1) if n else np.full(len(F), -1)
+    # Own sources the pipeline (before the (brickid, objid) fix) may have mixed up with a neighbour sharing their
+    # objid: wrong g-i in the DCR colour lookup, and/or the neighbour's epochs merged into the PM fit.
+    clash_ids = np.union1d(T['objid'][~own], F['objid'][F['brickid'] != own_id])
+    objid_clash = own & np.isin(T['objid'], clash_ids)
+    # epochs with a valid fit, per object
+    v = (F['full_fit_dra_ivar'] > 0) & (frow >= 0)
+    o = frow[v]
     n_epochs = np.bincount(o, minlength=n)[:n]
     first = np.full(n, np.inf)
     last = np.full(n, -np.inf)
     np.minimum.at(first, o, F['mjd'][v])
     np.maximum.at(last, o, F['mjd'][v])
     baseline = np.where(n_epochs > 0, last - first, 0.)
-    is_psf = strip(T['type']) == 'PSF'
-    is_gaia = strip(T['ref_cat']) == 'GE'
+    is_psf = (strip(T['type']) == 'PSF') & own
+    is_gaia = (strip(T['ref_cat']) == 'GE') & own
     ok = is_psf & (T['pm_flag'] == 1)
-    extra = {'n_epochs': n_epochs.astype(np.int16), 'baseline_days': baseline.astype(np.float32)}
-    gaia_rows = is_gaia[np.clip(F['objid'], 0, n - 1)] & (F['objid'] < n)
+    extra = {'n_epochs': n_epochs.astype(np.int16), 'baseline_days': baseline.astype(np.float32),
+             'objid_clash': objid_clash}
+    gaia_rows = (frow >= 0) & is_gaia[np.maximum(frow, 0)]
     summary = {'brickname': brick, 'ra': float(np.median(T['ra'])), 'dec': float(np.median(T['dec'])),
-               'n_objects': n, 'n_psf': int(is_psf.sum()), 'n_pm_ok': int(ok.sum()),
+               'n_objects': int(own.sum()), 'n_appended': int((~own).sum()), 'n_clash_psf': int((objid_clash & is_psf).sum()), 'n_psf': int(is_psf.sum()), 'n_pm_ok': int(ok.sum()),
                'n_gaia': int(is_gaia.sum()), 'n_gaia_pm_ok': int((ok & is_gaia).sum()),
                'median_epochs_psf': float(np.median(n_epochs[is_psf])) if is_psf.any() else 0.,
                'median_baseline_psf': float(np.median(baseline[is_psf])) if is_psf.any() else 0.}

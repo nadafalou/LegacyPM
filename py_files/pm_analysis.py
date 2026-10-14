@@ -145,6 +145,13 @@ def load_gaia_epochs(degrees=('060',), combined_dir=COMBINED_DIR):
 _MAX_SANE_PM_MAS_PER_YR = 1e4
 
 
+def _no_clash(T):
+    """False for stars flagged objid_clash by combine_catalogue.py (a neighbouring brick's source shares their
+    objid, so the pre-fix pipeline may have used the wrong colour or merged epochs); all True if the column is absent."""
+    c = T.get('objid_clash') if 'objid_clash' in T.get_columns() else None
+    return np.ones(len(T), bool) if c is None else ~np.asarray(c, bool)
+
+
 def gaia_star_mask(T, model='no_plx'):
     """Boolean mask: Gaia-reference PSF stars with a genuinely successful,
     numerically-sane fit.
@@ -166,6 +173,7 @@ def gaia_star_mask(T, model='no_plx'):
     pmra = getattr(T, pmra_col)
     pmdec = getattr(T, pmdec_col)
     return (
+        _no_clash(T) &
         (T.ref_cat == 'GE') &
         # Gaia 2-parameter solutions have no PM/parallax (stored as 0, ivar 0): nothing to validate against
         (T.pmra_ivar > 0) & (T.pmdec_ivar > 0) & (T.parallax_ivar > 0) &
@@ -185,6 +193,7 @@ def non_gaia_psf_mask(T, model='no_plx'):
     pmra = getattr(T, pmra_col)
     pmdec = getattr(T, pmdec_col)
     return (
+        _no_clash(T) &
         (T.ref_cat != 'GE') &
         (T.type == 'PSF') &
         (T.pm_flag == 1) &

@@ -110,6 +110,16 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
   brick_lateralmaps.py applies them with magnitude colour g−i around pivot 1.642. Check which colour built the
   `lateralmaps.fits` actually in use.
 - DCR K_i = K_z = 1 rather than 0 (see open questions).
+- **objid clashes (found 2026-10-14, when combine crashed on slice 002):** ~18% of tractor catalogues have rows from
+  neighbouring bricks appended at the end (other brickid, own objid numbering; e.g. large SGA galaxies), and ~3% of
+  forced files include those sources' epochs. The brick's own sources always have objid == row. Two pipeline steps
+  match on objid only: brick_DCR's colour lookup (a clashing neighbour overwrites an own star's g-i) and
+  create_brick_catalogue's row grouping (neighbour epochs merged into the own star's fit; appended PSF rows get the
+  own star's fit). Affected PSF stars per slice (002 / 030 / 061): wrong DCR colour 171 / 140 / 79, merged epochs
+  18 / 17 / 21, appended PSF rows 29 / 7 / 8 -- ~0.005% of ~4.5M per slice. NOT fixed in the pipeline yet (needs a
+  rerun; do it together with the K_b decision): key both lookups on (brickid, objid) and skip non-own rows.
+  Mitigation now: combine_catalogue.py matches on (brickid, objid), keeps only own sources, flags objid_clash;
+  pm_analysis masks drop flagged stars.
 - FIXED 2026-10-14: dcr-plots F2 "before" panels plotted the forced file's dp1 column, which is in PIXELS, next to
   dp1_after in arcsec on the same colour scale (both labelled arcsec), so the before signal looked 3.8x too small.
   Slide 15 has the same problem. Now both in arcsec (dp1_before computed from full_fit_x/y).
