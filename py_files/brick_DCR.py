@@ -134,7 +134,7 @@ class BrickDCR:
 
 
     def apply_correction(self):
-        vectorized_mapping = np.vectorize(self._map_char_to_value)
+        vectorized_mapping = np.vectorize(self._map_char_to_value, otypes=[float])  # otypes: works when no star has a g-i colour
 
         print(len(self.forced))
         ampl = vectorized_mapping(DCR_AMPLITUDES, np.array(self.forced.filter, dtype=str))

@@ -1,6 +1,6 @@
 # LegacyPM progress tracker
 
-Last updated: 2026-10-12. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
+Last updated: 2026-10-14. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
 
 ## Paper (writeup/main.tex)
 
@@ -20,7 +20,8 @@ Last updated: 2026-10-12. Status keys: [x] done · [~] in progress · [ ] todo �
 - [ ] Nada to review all Step-1 edits (marked with `\todo` where a number/fact needs confirming)
 
 ### Step 2: figures (all from notebooks in run/, saved to writeup/plots/)
-Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/legacypm-catalogue/060-063`.
+Notebooks repointed (2026-10-12) to the combined per-slice files from slurm/combine_catalogue.py (RUNBOOK section 6).
+Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write all their figures.
 | # | Figure | Notebook / cell | Status |
 |---|---|---|---|
 | F1 | Positional σ vs mag, Gaia vs LS (Dustin's request) | err-plots "Intro plots" | [ ] rerun & save (slide 9 version exists) |
@@ -28,7 +29,7 @@ Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/lega
 | F3 | K_b fit per band | new cell in dcr-plots | [ ] |
 | F4 | Tree-ring map | ringmaps.png | [x] |
 | F5 | Lateral colour focal-plane maps, before/after | err-plots "Lateral plots" | [ ] rerun & save (slides 18-19) |
-| F6 | Residual scatter vs mag per correction stage | err-plots cell 8 | [ ] **fix swapped labels first** (see Bugs) |
+| F6 | Residual scatter vs mag per correction stage | err-plots cell 8 | [ ] labels fixed 2026-10-12; run on real data |
 | F7 | PM residual (ours − Gaia) vs G | err-plots cell 31 | [ ] adapt to hexbin |
 | F8 | Pull distributions PM + parallax | err-plots cell 29 | [ ] run (never executed) |
 | F9 | PM precision vs mag, extended past G=21 | err-plots cell 32 | [ ] extend |
@@ -36,13 +37,13 @@ Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/lega
 | F11 | Footprint + N_epochs / baseline histograms | new | [ ] |
 
 ### Step 3: results & discussion text
-- [ ] Sample description (548 bricks, RA ≈ 60–64°; counts of stars, PSF, with PM, Gaia/non-Gaia)
+- [ ] Sample description (RA 000–063, ~81.5k bricks once the run finishes; counts of stars, PSF, with PM, Gaia/non-Gaia)
 - [ ] Analysis of Corrected Data (from F6)
 - [ ] Results: PM vs Gaia, uncertainty calibration (pull widths; commit msgs say ~1.5–1.7 PM, ~1.3 plx -- re-measure)
 - [ ] Parallax: honest assessment (cadence-limited)
 - [ ] Data product: table of output columns
 - [ ] Discussion (notes at end of main.tex): empirical maps vs Bernstein parametric; limitations
-- [!] High-PM / non-Gaia candidates -- needs analysis-time epoch/baseline cut on the 548 bricks
+- [ ] High-PM / non-Gaia candidates (epoch/baseline cuts now applied in the pipeline; needs the 000–063 run)
 - [ ] Abstract, conclusion, keywords
 
 ## Open questions (for Nada / Dustin) -- answers 2026-10-12
@@ -91,8 +92,15 @@ Repoint notebooks from `legacypm-catalogue/190-192` (now empty) to `archive/lega
   blocked until NERSC resets them. The Slurm driver (slurm/) works without it. See RUNBOOK.md.
 - DCR: objects with no g-i colour get g_i_colour = 0 (brick_DCR.py line 102, `colormap.get(objid, 0.)`), i.e. they are
   corrected as if g-i = 0. Check how many PSF objects this affects.
-- err-plots cell 8 (= slide 20 "Error Analysis"): labels "DCR corrected" and "DCR+RM corrected" are swapped
-  (scat3 = rm is labelled DCR, scat2 = dcr is labelled DCR+RM).
+- FIXED 2026-10-12: err-plots cell 8 (slide 20) had the "DCR corrected" / "DCR+RM corrected" labels swapped.
+  Slide 20 itself is therefore mislabelled.
+- FIXED 2026-10-12: err-plots cell 14 / dcr-plots cell 4 gave epochs whose star had been cut from T a t_index of -1,
+  which silently picked up the last row of T (wrong colours/magnitudes). Those epochs are now dropped.
+- FIXED 2026-10-12: pm_analysis.gaia_star_mask included Gaia 2-parameter stars (no Gaia PM, stored as 0), 8.5% of the
+  058 validation sample, compared against PM = 0. Now requires Gaia pmra/pmdec/parallax ivar > 0.
+- Noted 2026-10-12, negligible: the MIN_EPOCHS / MIN_BASELINE_DAYS cut counts all of a star's rows, including epochs
+  with no valid fit (ivar 0, ~60-68% of rows; zero weight in the fit). Only 9 of 19,920 PSF stars on 10 test bricks
+  pass because of them. Combined files carry n_epochs / baseline_days from valid epochs for a stricter analysis cut.
 - create-maps.ipynb builds lateral maps with `dc = (T.flux_g - T.flux_i)` (flux difference!) but
   brick_lateralmaps.py applies them with magnitude colour g−i around pivot 1.642. Check which colour built the
   `lateralmaps.fits` actually in use.
@@ -233,7 +241,13 @@ Proposed fix (remaining):
 - [x] Debug-qos test job 59704930 (058, 2026-10-12): 6/6 bricks OK, peak 20 GB. Full bricks took 80-120 s, mostly the
   PM step (per-object full-table masks + per-epoch radec_at_mjd loop). Sped up (row grouping once, vectorised
   parallax factors, plain arrays): PM 56 -> 5.8 s and 93 -> 6.6 s on full bricks; output bit-identical in every column
-  on 6 bricks (4 from 058, 2 archive incl. Gaia stars). Typical brick now ~35-45 s; sbatch now 128 workers, 6 h. [ ] 4 jobs: 000-015, 016-031, 032-047, 048-063 (RUNBOOK TL;DR).
+  on 6 bricks (4 from 058, 2 archive incl. Gaia stars). Typical brick now ~35-45 s; sbatch now 128 workers, 6 h.
+- [x] 4 jobs 59705165-59705168 (000-015, 016-031, 032-047, 048-063), 2026-10-12: all COMPLETED in 4.3-5.2 h each
+  (estimate was ~2 h: a full node runs at ~100 s per brick per worker, vs ~40 s for one brick alone). 81,296 ok,
+  195 failed, all in DCR: bricks with a few i-band exposures but (almost) no stars with both g and i flux, so no g-i
+  colour -> empty array -> np.vectorize crash. Fixed 2026-10-14 (otypes=[float]; DCR is then skipped for those stars,
+  as for bricks with no i band). Tested on 0019p172.
+- [ ] Rerun the 195 failures: `sbatch --qos=debug --time=00:30:00 run_bricks.sbatch 000-063` (skips finished bricks).
 - [ ] rsync tractor-pm to CFS; ask Dustin about CFS space for the ~3.5 TB of forced files.
 - [ ] Send missing_bricks.txt to Dustin; resubmit the same ranges when they arrive.
 - [ ] Then: repoint notebooks, figures (Step 2), error analysis / 14.8 mas floor.

@@ -15,7 +15,7 @@ sbatch run_bricks.sbatch 032-047
 sbatch run_bricks.sbatch 048-063
 squeue --me                           # monitor; logging out is fine
 # when Dustin delivers more bricks (missing_bricks.txt): resubmit the same ranges -- only new bricks run
-# then: copy catalogues to CFS (section 4), analyse in NERSC Jupyter with the desi-pm kernel (section 6)
+# then: combine per slice for the notebooks (section 6), copy to CFS (section 4), run the run/ notebooks
 ```
 
 ## 1. Environments
@@ -101,9 +101,9 @@ less /pscratch/sd/n/nelfalou/legacypm-catalogue/<RRR>/logs/<brick>.log
 shifter --image=docker:nadafalou/legacypm:5 python run_bricks.py 000-063 --dry-run   # "N done, 0 to run" = finished
 ```
 
-- **Plan for 000-063:** 81,491 bricks at ~40 s each is ~900 core-hours, i.e. ~7 h of one node with 128 workers --
-  hence 4 jobs of 16 slices (~2 h each; 6 h walltime leaves room for slower CFS reads). Test job 59704930 (debug, 058,
-  2026-10-12): 6 bricks OK, peak memory 20 GB.
+- **Plan for 000-063:** 4 jobs of 16 slices. Measured (2026-10-12): 4.3-5.2 h per job for 15-23k bricks with 128
+  workers, i.e. ~100 s per brick per worker on a full node (vs ~40 s for a brick alone: shared I/O and memory bandwidth).
+  Keep the 6 h walltime; blocks of more than ~25k bricks need splitting. Test job 59704930 (debug, 058): peak 20 GB.
 - Don't run two jobs on the same slice at the same time (both would process the same bricks).
 - Logging out does not affect a submitted Slurm job, so no tmux needed.
 - If a job hits the time limit or bricks fail: fix the cause and resubmit the same command; finished bricks are skipped.
@@ -149,15 +149,27 @@ lpad rerun_fws -s FIZZLED                    # retry after fixing
 
 ## 6. Analysis and figures
 
-- NERSC Jupyter (jupyter.nersc.gov), kernel **desi-pm**. Notebooks in `run/` import the code with
-  `sys.path.append(...); from py_files import ...`, so open them from `run/`.
-- Loading hundreds of bricks: use a Jupyter server on a compute node (or `salloc -q interactive -C cpu -t 2:00:00`),
-  not a login node.
-- Paper figures only from `run/` notebooks, saved to `writeup/plots/` (see CLAUDE.md). Main one: `err-plots.ipynb`.
-- Notebooks still point at old dirs (`legacypm-catalogue/190-192`, etc.); repoint them to
-  `/pscratch/sd/n/nelfalou/legacypm-catalogue/<RRR>/` (or the CFS copy).
-- With ~80k bricks, reading every `tractor-pm-*` file in a notebook is slow. Consider first concatenating the PSF rows
-  with `pm_flag == 1` and the columns you need into one file per slice (not written yet).
+**Step 1 -- combine the per-brick output** (the notebooks never read per-brick files any more):
+```bash
+cd /pscratch/sd/n/nelfalou/LegacyPM/slurm
+sbatch -A desi -q regular -C cpu -N 1 -t 04:00:00 --image=docker:nadafalou/legacypm:5 \
+  -o /pscratch/sd/n/nelfalou/legacypm-catalogue/slurm-logs/combine-%j.out \
+  --wrap "cd $PWD && shifter python combine_catalogue.py 000-063 --workers 128"
+```
+(or `~/anaconda3/envs/desi-pm/bin/python combine_catalogue.py 058` for one slice on a login node). It writes, per slice,
+into `/pscratch/sd/n/nelfalou/legacypm-catalogue/combined/`: `pm-<deg>.fits` (PSF objects with PMs, plus `n_epochs` and
+`baseline_days` from valid epochs), `gaia-objects-<deg>.fits`, `gaia-epochs-<deg>.fits` (per-epoch rows of Gaia stars,
+raw + corrected positions) and `bricks-<deg>.fits` (one row per brick). Rerun it whenever more bricks finish; it
+overwrites. Only finished bricks are included. Copy `combined/` to CFS with the catalogues.
+
+**Step 2 -- notebooks.** NERSC Jupyter (jupyter.nersc.gov), kernel **desi-pm**, opened from `run/`. Loading helpers in
+`py_files/pm_analysis.py`: `load_combined(kind, degrees)` and `load_gaia_epochs(degrees)`.
+- `run/err-plots.ipynb`: set `EPOCH_DEGREES` (per-epoch figures; one or a few slices) and `PM_DEGREES` (catalogue
+  figures; default `000-063`) in cell 1. Saves F1, F5-F9, F11 into `writeup/plots/`.
+- `run/dcr-plots.ipynb`: `EPOCH_DEGREES` in cell 1; saves F2. Builds the 14 GB CCD lookup, so use a compute node.
+- Cells changed for this are marked `# [EDITED 2026-10-12]`.
+- Use a Jupyter server on a compute node (or `salloc -q interactive -C cpu -t 2:00:00`) for anything beyond a slice.
+- Paper figures only from `run/` notebooks, saved to `writeup/plots/` (see CLAUDE.md).
 
 ## 7. Calibration models
 

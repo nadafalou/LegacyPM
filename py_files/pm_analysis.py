@@ -94,6 +94,45 @@ def load_catalogue(archive_dir, degrees=None, columns=_COLUMNS, n_workers=8):
     return T, skipped
 
 
+# Combined per-slice files written by slurm/combine_catalogue.py (see its docstring for what each holds).
+COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue/combined'
+
+
+def _degree_list(degrees):
+    """['060', '061'] or ['000-063'] -> list of 3-digit slice names."""
+    out = []
+    for item in degrees:
+        lo, _, hi = item.partition('-')
+        out += [f"{d:03d}" for d in range(int(lo), int(hi or lo) + 1)]
+    return out
+
+
+def load_combined(kind, degrees=('000-063',), combined_dir=COMBINED_DIR, columns=None):
+    """Load and concatenate combined files of one kind ('pm', 'gaia-objects', 'gaia-epochs', 'bricks') for the
+    given slices. Slices without a combined file yet are skipped (and listed). Returns a fits_table."""
+    tables, missing = [], []
+    for deg in _degree_list(degrees):
+        path = os.path.join(combined_dir, f"{kind}-{deg}.fits")
+        if _is_complete(path):
+            tables.append(fits_table(path, columns=columns))
+        else:
+            missing.append(deg)
+    if not tables:
+        raise RuntimeError(f"no {kind} files in {combined_dir} for {degrees}")
+    if missing:
+        print(f"{kind}: no combined file for {len(missing)} slice(s): {' '.join(missing)}")
+    return merge_tables(tables, columns='fillzero')
+
+
+def load_gaia_epochs(degrees=('060',), combined_dir=COMBINED_DIR):
+    """(F, T) for the per-epoch figures: F = forced-photometry rows of Gaia stars (raw and DCR/RM/LM-corrected
+    positions), T = those Gaia stars' catalogue rows. Matched on (brickid, objid), as in the notebooks.
+    A few slices are plenty (~9M epochs per full slice)."""
+    F = load_combined('gaia-epochs', degrees, combined_dir)
+    T = load_combined('gaia-objects', degrees, combined_dir)
+    return F, T
+
+
 # Sanity bound on |PM|, mas/yr. The fastest known real stars (e.g. Barnard's
 # Star) are ~10,000 mas/yr; anything beyond that in this dataset has -- every
 # case checked -- been a numerically degenerate least-squares fit (very few or
@@ -128,6 +167,8 @@ def gaia_star_mask(T, model='no_plx'):
     pmdec = getattr(T, pmdec_col)
     return (
         (T.ref_cat == 'GE') &
+        # Gaia 2-parameter solutions have no PM/parallax (stored as 0, ivar 0): nothing to validate against
+        (T.pmra_ivar > 0) & (T.pmdec_ivar > 0) & (T.parallax_ivar > 0) &
         (T.type == 'PSF') &
         (T.pm_flag == 1) &
         ((pmra != 0) | (pmdec != 0)) &
