@@ -47,6 +47,11 @@ login currently fails. The image provides software only; the code always runs fr
 - pscratch is purged: copy finished output to CFS.
 - **All paper figures must be produced by notebooks in `run/`** (`err-plots.ipynb` is the main one), saved into
   `writeup/plots/`. Don't make figures with ad hoc scripts.
+- **Figure style:** every paper figure calls `ps.apply()` from `py_files/plot_style.py` and is drawn at printed size
+  (`ps.COLUMN` / `ps.PAGE` wide). Colours: `ps.DIVERGING` for signed quantities (blue negative, red positive,
+  symmetric limits), `ps.DENSITY` (greys) for point density under overlays, `ps.SEQUENTIAL` for magnitudes,
+  `ps.SERIES` + `ps.MARKERS` in fixed order for lines (always with a legend). All colour-blind safe (Nada's preference).
+  Use raw strings for LaTeX labels (`r'$G_{\rm BP}$'`).
 - Heavy analysis (loading hundreds of bricks) should run on a compute node / NERSC Jupyter, not a login node.
 - Recent slides with the latest plots: `writeup/Proper Motions from the DESI Legacy Imaging Surveys.pdf` (July 2025).
 

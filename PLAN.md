@@ -19,7 +19,7 @@ Last updated: 2026-10-14. Status keys: [x] done · [~] in progress · [ ] todo �
 - [x] Paper compiles cleanly (see CLAUDE.md for build command); 13 `\todo`s + 4 `\figtodo`s left in text
 - [ ] Nada to review all Step-1 edits (marked with `\todo` where a number/fact needs confirming)
 
-### Step 2: figures (all from notebooks in run/, saved to writeup/plots/)
+### Step 2: figures (all from notebooks in run/, saved to writeup/plots/; shared style py_files/plot_style.py)
 Notebooks repointed (2026-10-12) to the combined per-slice files from slurm/combine_catalogue.py (RUNBOOK section 6).
 Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write all their figures.
 | # | Figure | Notebook / cell | Status |
@@ -27,7 +27,7 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
 | F1 | Positional σ vs mag, Gaia vs LS (Dustin's request) | err-plots cell 5 -> pos_err_vs_mag.png | [ ] code ready |
 | F2 | DCR before/after hexbin (replace DRC.png) | dcr-plots cell 11 -> dcr_before_after.png | [ ] code ready; units bug fixed 2026-10-14 |
 | F3 | K_b fit per band | dcr-plots cell 13 -> dcr_amplitude_fit.pdf | [ ] code written + tested 2026-10-14 |
-| F4 | Tree-ring map | ringmaps.png | [x] |
+| F4 | Tree-ring maps: one CCD + whole focal plane (Dustin) | run/ringmap-plots.ipynb -> ringmap_N4_z.pdf, ringmap_focal_plane_z.png | [x] 2026-10-14, in main.tex |
 | F5 | Lateral colour focal-plane maps, before/after | err-plots cell 26 -> lateral_colour_bins.png | [ ] code ready (2 rows: before/after LM) |
 | F6 | Residual scatter vs mag per correction stage | err-plots cell 8 | [ ] labels fixed 2026-10-12; run on real data |
 | F7 | PM residual (ours − Gaia) vs G | err-plots cell 31 | [ ] adapt to hexbin |
