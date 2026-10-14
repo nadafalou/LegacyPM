@@ -24,17 +24,17 @@ Notebooks repointed (2026-10-12) to the combined per-slice files from slurm/comb
 Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write all their figures.
 | # | Figure | Notebook / cell | Status |
 |---|---|---|---|
-| F1 | Positional σ vs mag, Gaia vs LS (Dustin's request) | err-plots "Intro plots" | [ ] rerun & save (slide 9 version exists) |
-| F2 | DCR before/after hexbin (replace DRC.png) | dcr-plots | [ ] rerun & save (slide 15 version exists) |
-| F3 | K_b fit per band | new cell in dcr-plots | [ ] |
+| F1 | Positional σ vs mag, Gaia vs LS (Dustin's request) | err-plots cell 5 -> pos_err_vs_mag.png | [ ] code ready |
+| F2 | DCR before/after hexbin (replace DRC.png) | dcr-plots cell 11 -> dcr_before_after.png | [ ] code ready; units bug fixed 2026-10-14 |
+| F3 | K_b fit per band | dcr-plots cell 13 -> dcr_amplitude_fit.pdf | [ ] code written + tested 2026-10-14 |
 | F4 | Tree-ring map | ringmaps.png | [x] |
-| F5 | Lateral colour focal-plane maps, before/after | err-plots "Lateral plots" | [ ] rerun & save (slides 18-19) |
+| F5 | Lateral colour focal-plane maps, before/after | err-plots cell 26 -> lateral_colour_bins.png | [ ] code ready (2 rows: before/after LM) |
 | F6 | Residual scatter vs mag per correction stage | err-plots cell 8 | [ ] labels fixed 2026-10-12; run on real data |
 | F7 | PM residual (ours − Gaia) vs G | err-plots cell 31 | [ ] adapt to hexbin |
 | F8 | Pull distributions PM + parallax | err-plots cell 29 | [ ] run (never executed) |
 | F9 | PM precision vs mag, extended past G=21 | err-plots cell 32 | [ ] extend |
-| F10 | Parallax vs Gaia | new | [ ] |
-| F11 | Footprint + N_epochs / baseline histograms | new | [ ] |
+| F10 | Parallax vs Gaia | err-plots cell after F9 -> parallax_vs_gaia.pdf | [ ] code written + tested 2026-10-14 |
+| F11 | Footprint + N_epochs / baseline histograms | err-plots cell 34 -> footprint.png | [ ] code ready |
 
 ### Step 3: results & discussion text
 - [ ] Sample description (RA 000–063, ~81.5k bricks once the run finishes; counts of stars, PSF, with PM, Gaia/non-Gaia)
@@ -51,6 +51,11 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
   median of the *2-D* offset hypot(dra, ddec); for a 2-D Gaussian that's ≈1.18 σ per axis, so the per-axis floor
   would be ≈12.6 mas. **Nada: redo the error analysis for the paper, but only after more RA slices are processed.**
 - K_i = K_z = 1 mas/mag: **Nada: negligible by design; we don't correct those bands' colours. Keep as is.**
+  **NEW 2026-10-14 (F3 fit, 485 random bricks of slice 000, 2.7M Gaia-star epochs, sigma < 10 mas, before DCR):**
+  K_g = 31.05 +- 0.07 (adopted 29.82), K_r = 8.97 +- 0.04 (7.91), **K_i = 4.47 +- 0.04 (adopted 1)**, K_z = 1.03 +- 0.04 (1).
+  So z is right, g and r are 4% and 13% low, and i is 4.5x too small. Uncorrected i-band DCR ~3.5 mas per mag of
+  relative colour at tan z = 1: small next to the ~13-15 mas per-epoch floor, but systematic in colour and airmass.
+  Decide whether to update DCR_AMPLITUDES (needs a full rerun) -- Nada/Dustin.
 - Ring maps "461 million measurements, ~6,400 per bin per map": **can't be verified any more**. The input star files
   are purged and ringmaps.fits stores no counts. 461e6 / (32,768 bins x ~244 CCD-filter maps) ≈ 58 per bin, so
   "6,400" is wrong unless 461M is. Suggest: drop the per-bin number (or say ~60) and keep 461M only if Nada trusts it.
@@ -105,6 +110,9 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
   brick_lateralmaps.py applies them with magnitude colour g−i around pivot 1.642. Check which colour built the
   `lateralmaps.fits` actually in use.
 - DCR K_i = K_z = 1 rather than 0 (see open questions).
+- FIXED 2026-10-14: dcr-plots F2 "before" panels plotted the forced file's dp1 column, which is in PIXELS, next to
+  dp1_after in arcsec on the same colour scale (both labelled arcsec), so the before signal looked 3.8x too small.
+  Slide 15 has the same problem. Now both in arcsec (dp1_before computed from full_fit_x/y).
 
 ## Data coverage (checked 2026-10-10 against DR10 south survey-bricks)
 - **No RA slice is complete.** Archive 060-063 has 548 valid bricks: 060 = 238/1152, 061 = 103/1140, 062 = 124/1139,
