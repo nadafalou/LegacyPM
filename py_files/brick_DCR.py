@@ -20,23 +20,11 @@ logger = logging.getLogger(__name__)
 # DCR_AMPLITUDES = {'r': 5.13, 'g': 20.47, 'i': 1, 'z': 1} # DCR amplitude in mas/mag/tan(z), from calculated slopes
 # DCR_AMPLITUDES = {'r': 7.91, 'g': 29.82, 'i': 1, 'z': 1} # linear model used until 2026-10-23 (Dustin's ntbk)
 # Since 2026-10-23: tan z x two straight lines in colour (James's suggestion), per band, fitted by run/dcr-polyfit.ipynb
-DCR_MODEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dcr_model_twoline.json')
-with open(DCR_MODEL_FILE) as _f:
-    DCR_MODEL = json.load(_f)
-
-
-def dcr_shift_mas(band, c_rel, tanz, model=DCR_MODEL):
-    """DCR shift along the parallactic direction (mas, to subtract):
-    tan z * (a + b_blue min(c - c_break, 0) + b_red max(c - c_break, 0)), c = c_rel clipped to [c_min, c_max].
-    Bands not in the model get no correction."""
-    band = np.asarray(band).astype(str)
-    c = np.clip(np.asarray(c_rel, dtype=float), model['c_min'], model['c_max'])
-    out = np.zeros(len(c))
-    for b, p in model['bands'].items():
-        m = band == b
-        d = c[m] - p['c_break']
-        out[m] = tanz[m] * (p['a'] + p['b_blue'] * np.minimum(d, 0) + p['b_red'] * np.maximum(d, 0))
-    return out
+# DCR_MODEL / dcr_shift_mas live in dcr_geometry.py (importable without loading the CCD table below)
+try:
+    from .dcr_geometry import DCR_MODEL, dcr_shift_mas
+except ImportError:
+    from dcr_geometry import DCR_MODEL, dcr_shift_mas
 
 # # CCD_annotated = fits_table('/pscratch/sd/d/dstn/zpt-dr10-new/ccds-annotated.fits')
 # CCD_annotated = fits_table('/pscratch/sd/d/dstn/forced-motions-3/ccds-annotated.fits')
@@ -88,14 +76,17 @@ class BrickDCR:
         dp2 = dx * np.sin(PA) + dy * np.cos(PA) # throw out - mostly zeroes
 
         all_COLOUR = g_minus_i(tractor.flux_g, tractor.flux_i, tractor.flux_z)[0]  # measured, else from g - z (colours.py)
-        colormap = dict(zip(tractor.objid, all_COLOUR))
-        
-        COLOUR = []
-        for idx in range(len(forced_psf)):
-            g_i_colour = colormap.get(forced_psf.objid[idx], 0.)
-            bprp_calib = -0.56 + 1.34 * BPRP_MAP[(forced_psf.expnum[idx], forced_psf.ccdname[idx])]
-            COLOUR.append(g_i_colour - bprp_calib)
-        COLOUR = np.array(COLOUR)
+        # match epochs to objects on (brickid, objid): Tractor catalogues can end with rows of neighbouring bricks'
+        # sources whose objids repeat this brick's (PLAN D1; before 2026-10-23 they could overwrite an object's
+        # colour). Objects not found get no colour (NaN -> not corrected), not g - i = 0.
+        tkey = (np.asarray(tractor.brickid).astype(np.int64) << 32) | np.asarray(tractor.objid).astype(np.int64)
+        fkey = (np.asarray(forced_psf.brickid).astype(np.int64) << 32) | np.asarray(forced_psf.objid).astype(np.int64)
+        srt = np.argsort(tkey)
+        pos = np.clip(np.searchsorted(tkey[srt], fkey), 0, max(len(tkey) - 1, 0))
+        found = (tkey[srt][pos] == fkey) if len(tkey) else np.zeros(len(fkey), bool)
+        g_i_colour = np.where(found, np.asarray(all_COLOUR)[srt[pos]] if len(tkey) else np.nan, np.nan)
+        bprp_calib = -0.56 + 1.34 * np.array([BPRP_MAP[(e, c)] for e, c in zip(forced_psf.expnum, forced_psf.ccdname)])
+        COLOUR = g_i_colour - bprp_calib
       
         self.filt = np.logical_and(COLOUR > -2, COLOUR < 3) # TODO check trend of colour
         self.forced = forced_psf[self.filt]
@@ -157,6 +148,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
         forced_table = fits.open(f)
         corr_table = forced_table.copy()
         # date the input was written (decides the Dec-ivar bug correction, error_model.py); archive bricks bring theirs
+        # Dustin's DDIVFIX card (Dec-ivar bug fixed) sits in the input's primary header; carry it into the table
+        # header, which the later steps read
+        if 'DDIVFIX' in corr_table[0].header and 'DDIVFIX' not in corr_table[1].header:
+            corr_table[1].header['DDIVFIX'] = (corr_table[0].header['DDIVFIX'], corr_table[0].header.comments['DDIVFIX'])
         if 'INPDATE' not in corr_table[1].header:
             corr_table[1].header['INPDATE'] = (time.strftime('%Y-%m-%d', time.localtime(os.path.getmtime(f))),
                                                'date the forced-photometry input was written')

@@ -4,7 +4,8 @@ into <out-root>/combined/:
 
   pm-<deg>.fits           PSF objects with a successful PM fit (pm_flag == 1): identifiers, positions, fluxes, Gaia
                           columns, our PM/parallax columns, plus n_epochs / baseline_days (epochs with a valid fit) and
-                          objid_clash (see read_brick; drop these, ~0.005%). Only each brick's own sources are kept.
+                          objid_clash (see read_brick; drop these, ~0.005%; only set for outputs made before the D1 fix,
+                          which have no OBJKEY header). Only each brick's own sources are kept.
   gaia-objects-<deg>.fits all Gaia stars (ref_cat GE), same columns, any pm_flag
   gaia-epochs-<deg>.fits  per-epoch forced-photometry rows of those Gaia stars, raw + DCR/RM/LM-corrected positions
   bricks-<deg>.fits       one row per brick: centre, object counts, median epochs and baseline
@@ -59,6 +60,7 @@ def read_brick(args):
     try:
         tf = os.path.join(deg_dir, f"tractor-pm-{brick}.fits")
         have = set(fitsio.FITS(tf)[1].get_colnames())   # quality columns exist from 2026-10-23 on
+        keyed = 'OBJKEY' in fitsio.read_header(tf, 1)   # pipeline matched on (brickid, objid): no clashes possible
         T = fitsio.read(tf, columns=[c for c in OBJ_COLS + QUALITY_COLS if c in have])
         F = fitsio.read(os.path.join(deg_dir, f"forced-{brick}.fits"), columns=EPOCH_COLS)
     except Exception as e:
@@ -73,10 +75,10 @@ def read_brick(args):
     srt = np.argsort(tkey)
     pos = np.clip(np.searchsorted(tkey[srt], fkey), 0, max(n - 1, 0))
     frow = np.where(tkey[srt][pos] == fkey, srt[pos], -1) if n else np.full(len(F), -1)
-    # Own sources the pipeline (before the (brickid, objid) fix) may have mixed up with a neighbour sharing their
+    # Own sources the pipeline (before the (brickid, objid) fix, D1) may have mixed up with a neighbour sharing their
     # objid: wrong g-i in the DCR colour lookup, and/or the neighbour's epochs merged into the PM fit.
     clash_ids = np.union1d(T['objid'][~own], F['objid'][F['brickid'] != own_id])
-    objid_clash = own & np.isin(T['objid'], clash_ids)
+    objid_clash = own & np.isin(T['objid'], clash_ids) & (not keyed)
     # epochs with a valid fit, per object
     v = (F['full_fit_dra_ivar'] > 0) & (frow >= 0)
     o = frow[v]

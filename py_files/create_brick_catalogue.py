@@ -146,21 +146,21 @@ def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
     return X_plx, variances_plx, X, variances, ref_mjd, n_bad
 
 
-def reference_motion(tractor, objid, ref_mjd):
+def reference_motion(tractor, row, ref_mjd):
     """The forced photometry moves every source with ref_epoch > 0 (Gaia stars) to each image's epoch using the
     catalogue's pmra, pmdec and parallax (legacypipe forced_photom, --move-gaia), so for those sources the fitted
     dra/ddec trends are residuals from the Gaia motion. Returns the reference position at ref_mjd (proper motion
     only, no parallax displacement), and the motion and its variances to add back to the fit so that our PM and
     parallax columns are absolute for every source. For sources without a reference motion: tractor ra/dec, zeros.
     """
-    ra, dec = tractor['ra'][objid], tractor['dec'][objid]
+    ra, dec = tractor['ra'][row], tractor['dec'][row]
     zero = {'pmra': 0., 'pmdec': 0., 'parallax': 0.}
-    if not tractor['ref_epoch'][objid] > 0:
+    if not tractor['ref_epoch'][row] > 0:
         return ra, dec, zero, dict(zero)
-    pm = {k: float(tractor[k][objid]) for k in ('pmra', 'pmdec', 'parallax')}
-    var = {k: (1 / float(tractor[k + '_ivar'][objid]) if tractor[k + '_ivar'][objid] > 0 else 0.)
+    pm = {k: float(tractor[k][row]) for k in ('pmra', 'pmdec', 'parallax')}
+    var = {k: (1 / float(tractor[k + '_ivar'][row]) if tractor[k + '_ivar'][row] > 0 else 0.)
            for k in ('pmra', 'pmdec', 'parallax')}
-    ra0, dec0 = radec_at_mjd(ra, dec, float(tractor['ref_epoch'][objid]), pm['pmra'], pm['pmdec'], 0., ref_mjd)
+    ra0, dec0 = radec_at_mjd(ra, dec, float(tractor['ref_epoch'][row]), pm['pmra'], pm['pmdec'], 0., ref_mjd)
     return float(np.atleast_1d(ra0)[0]), float(np.atleast_1d(dec0)[0]), pm, var
 
 
@@ -221,7 +221,8 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         filt = forced_table[1].data.filter
         dra_error = total_error(dra_ivar, filt)
         ddec_fixed, dec_cards = corrected_ddec_ivar(dra_ivar, ddec_ivar, forced_table[1].data.dec,
-                                                    forced_table[1].header.get('INPDATE'), forced_table[1].header.get('DDIVFIX'))
+                                                    forced_table[1].header.get('INPDATE'),
+                                                    forced_table[1].header.get('DDIVFIX', forced_table[0].header.get('DDIVFIX')))
         ddec_error = total_error(ddec_fixed, filt)
         sys_cards = header_cards() + dec_cards
 
@@ -244,7 +245,12 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     # Plain numpy copies of the columns used per object (FITS_rec column access is slow), and each object's
     # measurement rows found once (a stable sort keeps them in file order) instead of a full-table mask per object.
     F = forced_table[1].data
-    f_objid = np.asarray(F.objid)
+    # epochs are grouped on (brickid, objid): Tractor catalogues can end with rows of neighbouring bricks' sources
+    # whose objids repeat this brick's, and the forced file can hold their epochs (PLAN D1; until 2026-10-23 their
+    # epochs were merged and objid was used as the row index)
+    f_objid = (np.asarray(F.brickid).astype(np.int64) << 32) | np.asarray(F.objid).astype(np.int64)
+    t_key = (np.asarray(tractor_table[1].data.brickid).astype(np.int64) << 32) | \
+            np.asarray(tractor_table[1].data.objid).astype(np.int64)
     f_mjd = np.asarray(F.mjd, dtype=float)
     f_dra = np.asarray(F.full_fit_dra if original_data else F.lm_full_fit_dra)
     f_ddec = np.asarray(F.full_fit_ddec if original_data else F.lm_full_fit_ddec)
@@ -265,7 +271,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     n_insufficient_data = 0  # objects flagged FEW_EPOCHS or SHORT_BASELINE (unreliable time coverage)
 
     for i, objid in zip(J, tractor_table[1].data.objid[J]):
-        rows = rows_of.get(int(objid), no_rows)
+        rows = rows_of.get(int(t_key[i]), no_rows)
         n_ep = len(rows)
         base = float(f_mjd[rows].max() - f_mjd[rows].min()) if n_ep else 0.
         pm_n_epochs[i], pm_baseline_days[i] = n_ep, base
@@ -277,7 +283,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             n_insufficient_data += 1
         try:
             X_plx, var_plx, X, var, rmjd, n_bad = calculate_pm(
-                f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][objid], T['dec'][objid]
+                f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][i], T['dec'][i]
             )
         except Exception as e:
             logger.warning(f"Error calculating PM for objid={objid}: {e}")
@@ -292,7 +298,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             pm_quality[i] |= PMQ_BAD_EPOCHS
 
         # reference motion the forced photometry already moved this source with (zero unless it is a Gaia star)
-        ra0, dec0, ref_pm, ref_var = reference_motion(T, objid, rmjd)
+        ra0, dec0, ref_pm, ref_var = reference_motion(T, i, rmjd)
         cosdec = np.cos(np.deg2rad(dec0))
 
         if X_plx is None:
@@ -375,6 +381,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     for key, val, comment in sys_cards:
         pm_table[1].header[key] = (val, comment)
     pm_table[1].header['BADNSIG'] = (BAD_EPOCH_NSIGMA, 'bad-epoch threshold (sigma)')
+    pm_table[1].header['OBJKEY'] = ('BRICKID+OBJID', 'epochs matched to objects on (brickid, objid)')
     pm_table[1].header['BADFRAC'] = (BAD_EPOCH_MAX_FRACTION, 'BAD_EPOCHS if this fraction of epochs is bad')
     output_path = f"{new_dir}{output_name}"
     tmp_path = output_path + ".tmp"
