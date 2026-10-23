@@ -209,6 +209,7 @@ STAGES = ['', 'dcr_', 'rm_', 'lm_']   # raw forced photometry, + DCR, + CCD maps
 
 
 def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir=COMBINED_DIR, max_sigma_mas=10.):
+    # also returns 'clean' (star-level quality, pm_quality == 0 equivalent), 'G' and 'sig_stat' (statistical error, mas)
     """Gaia-star epochs (sigma < max_sigma_mas, valid fit) with, for every correction stage, the offset from Gaia
     along (par_<stage>) and across (perp_<stage>) the parallactic direction, in mas, plus band, c_rel and tan z.
     Stage keys: 'raw', 'dcr', 'rm', 'lm'."""
@@ -226,7 +227,9 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
             bricks = np.unique(F['brickid'])
             F = F[np.isin(F['brickid'], rng.choice(bricks, max(1, int(brick_fraction * len(bricks))), replace=False))]
         F = F[(F['full_fit_dra_ivar'] > 1 / (max_sigma_mas / 1000.)**2) & (F['full_fit_dra'] != 0)]
-        T = fitsio.read(fo, columns=['brickid', 'objid', 'flux_g', 'flux_i'])
+        T = fitsio.read(fo, columns=['brickid', 'objid', 'flux_g', 'flux_i', 'maskbits', 'n_epochs', 'baseline_days',
+                                     'pm_flag', 'gaia_phot_g_mean_mag', 'gaia_phot_bp_mean_mag',
+                                     'gaia_phot_rp_mean_mag', 'pmra', 'pmdec', 'ra', 'dec'])
         tkey = (T['brickid'].astype(np.int64) << 32) | T['objid'].astype(np.int64)
         fkey = (F['brickid'].astype(np.int64) << 32) | F['objid'].astype(np.int64)
         srt = np.argsort(tkey)
@@ -235,6 +238,10 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
         F, row = F[row >= 0], row[row >= 0]
         with np.errstate(all='ignore'):
             gi = -2.5 * np.log10(T['flux_g'][row] / T['flux_i'][row])
+        mb = T['maskbits'][row].astype(np.int64)
+        # star-level "clean" (pm_quality == 0 equivalent, see pm_analysis.quality_bits)
+        clean = ((T['n_epochs'][row] >= 10) & (T['baseline_days'][row] >= 730) & np.isfinite(gi) & (T['pm_flag'][row] == 1)
+                 & ((mb & ((1 << 1) | (1 << 11) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14))) == 0))
         names = np.char.strip(F['ccdname'].astype(str))
         un = np.unique(names)
         cidx = np.array([ccd_index.get(n, -1) for n in un])[np.searchsorted(un, names)]
@@ -244,7 +251,11 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
         ha = dcr_geometry.hour_angle(F['ra'], F['mjd'] + 0.5 * F['exptime'] / 86400.)
         am, pa = dcr_geometry.parallactic(F['dec'], ha)
         d = {'band': np.char.strip(F['filter'].astype(str)), 'c_rel': c_rel,
-             'tanz': np.sqrt(np.clip(am**2 - 1, 0, None)), 'brickid': F['brickid']}
+             'tanz': np.sqrt(np.clip(am**2 - 1, 0, None)), 'brickid': F['brickid'], 'clean': clean,
+             'G': T['gaia_phot_g_mean_mag'][row], 'sig_stat': 1000 / np.sqrt(F['full_fit_dra_ivar']),
+             'pa': pa, 'dec': F['dec'],   # parallactic angle (rad, from north through east) and Dec of the epoch
+             'objid': F['objid'], 'bp_rp': T['gaia_phot_bp_mean_mag'][row] - T['gaia_phot_rp_mean_mag'][row],
+             'gaia_pm': np.hypot(T['pmra'][row], T['pmdec'][row]), 'star_ra': T['ra'][row], 'star_dec': T['dec'][row]}
         for s, name in zip(STAGES, ['raw', 'dcr', 'rm', 'lm']):
             dx = F[f'{s}full_fit_x'] - F['x']
             dy = F[f'{s}full_fit_y'] - F['y']
