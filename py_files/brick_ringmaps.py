@@ -18,7 +18,10 @@ BY = int(4096 // BINNING)
 BX = int(2048 // BINNING)
 
 
-RINGMAPS_PATH = '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/ringmaps.fits'  # Apr 2024 maps, see PLAN.md
+# Since 2026-10-23 (PLAN B1): rebuilt from all 000-063 Gaia stars after the two-line DCR model, 16-px bins, by
+# py_files/ringmap_build.py (validated in run/ringmap-build.ipynb: removes 6-8 mas per axis in every band on held-out
+# bricks; the Apr 2024 maps, ringmaps.fits in the same directory, added 9 mas in g).
+RINGMAPS_PATH = '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/ringmaps-dr10.fits'
 
 def get_gaia_data(directory='/pscratch/sd/d/dstn/forced-motions-3/'):
     G = merge_tables([
@@ -86,10 +89,13 @@ def make_splines(ringmaps):
     tweaks = {}
 
     for rmap in ringmaps.keys():
+        # bin size from the map shape (ny, nx) = (4096, 2048) / binning: 16 px for the 2024 maps, any for rebuilt ones
+        by, bx = ringmaps[rmap][0].shape
+        binning = 4096 // by
         # Locate grid points, in 1-indexed pixel system
-        xvals = BINNING * np.arange(BX) + 0.5 * BINNING + 1
-        yvals = BINNING * np.arange(BY) + 0.5 * BINNING + 1
-        bbox = [1, BX * BINNING + 1, 1, BY * BINNING + 1]
+        xvals = binning * np.arange(bx) + 0.5 * binning + 1
+        yvals = binning * np.arange(by) + 0.5 * binning + 1
+        bbox = [1, bx * binning + 1, 1, by * binning + 1]
         # Create linear spline for x and y components
         # Note that data array comes in with (y,x) indexing
         tweaks[rmap] = (RectBivariateSpline(xvals, yvals, ringmaps[rmap][0].transpose(),
