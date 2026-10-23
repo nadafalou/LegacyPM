@@ -1,0 +1,23 @@
+{
+ "description": "g - i = polyval(coeffs, g - z) for objects without a measured g - i (py_files/colours.py)",
+ "coeffs": [
+  -0.020530964595759815,
+  0.10056295273851584,
+  0.7085986235210736,
+  0.08640139041836382
+ ],
+ "gz_min": -0.12417663432003101,
+ "gz_max": 3.970256943639225,
+ "fit": {
+  "notebook": "run/colour-fallback.ipynb",
+  "date": "2026-10-23",
+  "slices": [
+   "000",
+   "020",
+   "040",
+   "060"
+  ],
+  "selection": "PSF objects with S/N > 50 in griz, -0.7 < g - i < 4",
+  "n_train": 464579
+ }
+}

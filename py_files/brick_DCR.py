@@ -4,7 +4,9 @@ from astropy.time import Time
 from astropy.table import Table, vstack
 from astropy import units as u
 from astrometry.util.fits import os, fits_table
+import os
 import sys
+import json
 import logging
 import time
 
@@ -16,7 +18,25 @@ logger = logging.getLogger(__name__)
 
 # DCR_AMPLITUDES = {'r': 2.61, 'g': 40.06} # from Bernstein et. al.
 # DCR_AMPLITUDES = {'r': 5.13, 'g': 20.47, 'i': 1, 'z': 1} # DCR amplitude in mas/mag/tan(z), from calculated slopes
-DCR_AMPLITUDES = {'r': 7.91, 'g': 29.82, 'i': 1, 'z': 1} # DCR amplitude in mas/mag/tan(z), from calculated slopes but cut out near 0's (Dustin's ntbk)
+# DCR_AMPLITUDES = {'r': 7.91, 'g': 29.82, 'i': 1, 'z': 1} # linear model used until 2026-10-23 (Dustin's ntbk)
+# Since 2026-10-23: tan z x two straight lines in colour (James's suggestion), per band, fitted by run/dcr-polyfit.ipynb
+DCR_MODEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dcr_model_twoline.json')
+with open(DCR_MODEL_FILE) as _f:
+    DCR_MODEL = json.load(_f)
+
+
+def dcr_shift_mas(band, c_rel, tanz, model=DCR_MODEL):
+    """DCR shift along the parallactic direction (mas, to subtract):
+    tan z * (a + b_blue min(c - c_break, 0) + b_red max(c - c_break, 0)), c = c_rel clipped to [c_min, c_max].
+    Bands not in the model get no correction."""
+    band = np.asarray(band).astype(str)
+    c = np.clip(np.asarray(c_rel, dtype=float), model['c_min'], model['c_max'])
+    out = np.zeros(len(c))
+    for b, p in model['bands'].items():
+        m = band == b
+        d = c[m] - p['c_break']
+        out[m] = tanz[m] * (p['a'] + p['b_blue'] * np.minimum(d, 0) + p['b_red'] * np.maximum(d, 0))
+    return out
 
 # # CCD_annotated = fits_table('/pscratch/sd/d/dstn/zpt-dr10-new/ccds-annotated.fits')
 # CCD_annotated = fits_table('/pscratch/sd/d/dstn/forced-motions-3/ccds-annotated.fits')
@@ -29,6 +49,11 @@ DCR_AMPLITUDES = {'r': 7.91, 'g': 29.82, 'i': 1, 'z': 1} # DCR amplitude in mas/
 CCD_annotated = fits_table('/global/cfs/cdirs/cosmo/work/users/dstn/forced-motions-dr10/survey-ccds-decam-dr10-bprp-kd.fits')
 BPRP_MAP = dict([((expnum, ccdname), bprp) for expnum,ccdname,bprp in zip(CCD_annotated.expnum, CCD_annotated.ccdname, CCD_annotated.ccdbprp)])
 
+
+try:
+    from .colours import g_minus_i
+except ImportError:
+    from colours import g_minus_i
 
 # hour_angle and parallactic live in dcr_geometry.py (importable without loading the CCD table above)
 try:
@@ -62,7 +87,7 @@ class BrickDCR:
         dp1 = dx * np.cos(PA) - dy * np.sin(PA) # what we want
         dp2 = dx * np.sin(PA) + dy * np.cos(PA) # throw out - mostly zeroes
 
-        all_COLOUR = -2.5 * (np.log10(tractor.flux_g / tractor.flux_i)) # division bc inside log        
+        all_COLOUR = g_minus_i(tractor.flux_g, tractor.flux_i, tractor.flux_z)[0]  # measured, else from g - z (colours.py)
         colormap = dict(zip(tractor.objid, all_COLOUR))
         
         COLOUR = []
@@ -102,12 +127,9 @@ class BrickDCR:
 
 
     def apply_correction(self):
-        vectorized_mapping = np.vectorize(self._map_char_to_value, otypes=[float])  # otypes: works when no star has a g-i colour
-
         print(len(self.forced))
-        ampl = vectorized_mapping(DCR_AMPLITUDES, np.array(self.forced.filter, dtype=str))
-
-        corr_dp1 = ampl * self.colour * np.sqrt(self.airmass**2 - 1) / 262 # mas to pixels
+        tanz = np.sqrt(self.airmass**2 - 1)
+        corr_dp1 = dcr_shift_mas(np.char.strip(np.array(self.forced.filter, dtype=str)), self.colour, tanz) / 262 # mas to pixels
         dcrx = np.cos(self.parallactic_angle) * corr_dp1
         dcry = -np.sin(self.parallactic_angle) * corr_dp1
         dDEC = -0.262 * dcrx
@@ -134,6 +156,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     try:
         forced_table = fits.open(f)
         corr_table = forced_table.copy()
+        # date the input was written (decides the Dec-ivar bug correction, error_model.py); archive bricks bring theirs
+        if 'INPDATE' not in corr_table[1].header:
+            corr_table[1].header['INPDATE'] = (time.strftime('%Y-%m-%d', time.localtime(os.path.getmtime(f))),
+                                               'date the forced-photometry input was written')
     except Exception as e:
         logger.error(f"Failed to open FITS file {f}: {e}")
         raise
@@ -144,12 +170,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, gaia=False):
     else:
         brickDCR = BrickDCR(corr_table[1].data, old_dir + "/tractor-forced-" + filename[-13:], forced_table=True)
 
-    if sum(forced_table[1].data.filter == 'i') == 0:
-        logger.info(f"{filename} - No 'i' band detected, skipping DCR correction")
-        brickDCR.no_dcr()
-    else:
-        logger.info(f"{filename} - Applying DCR correction")
-        brickDCR.apply_correction()
+    # No longer skipped for bricks without i-band data (until 2026-10-23 they got no DCR at all): objects without a
+    # measured g - i get it from g - z (colours.py); objects with neither colour are left uncorrected (filt above).
+    logger.info(f"{filename} - Applying DCR correction")
+    brickDCR.apply_correction()
 
     temp_psf = np.flatnonzero(brickDCR.psf_filt)
 

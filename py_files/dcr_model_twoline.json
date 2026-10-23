@@ -1,0 +1,41 @@
+{
+ "description": "DCR along the parallactic direction (mas) = tan z * (a + b_blue*min(c - c_break, 0) + b_red*max(c - c_break, 0)), c = clip(c_rel, c_min, c_max), c_rel = (g-i) - (-0.56 + 1.34*ccdbprp). Subtract from the measured position.",
+ "c_min": -1.5,
+ "c_max": 2.5,
+ "bands": {
+  "g": {
+   "c_break": 0.05,
+   "a": 3.517047486259896,
+   "b_blue": 39.74743059232909,
+   "b_red": 25.105335256648317
+  },
+  "r": {
+   "c_break": 0.7,
+   "a": 3.291904741083401,
+   "b_blue": 7.898843328802415,
+   "b_red": 13.108582940580412
+  },
+  "i": {
+   "c_break": 0.5,
+   "a": -0.13369514725142276,
+   "b_blue": 3.438184370984691,
+   "b_red": 6.334902494243137
+  },
+  "z": {
+   "c_break": -0.1,
+   "a": -0.8198309137260379,
+   "b_blue": 0.9437288059303737,
+   "b_red": 1.5383279063453696
+  }
+ },
+ "fit": {
+  "notebook": "run/dcr-polyfit.ipynb",
+  "date": "2026-10-23",
+  "degrees": [
+   "000-063"
+  ],
+  "brick_fraction": 0.25,
+  "n_epochs": 80650765,
+  "selection": "Gaia stars, sigma < 10 mas, |c_rel| < 3, before any correction"
+ }
+}

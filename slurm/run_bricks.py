@@ -6,7 +6,7 @@ Restartable: bricks whose tractor-pm-<brick>.fits already exists (non-empty) are
 Each brick's input is taken from the first source that has it (see SOURCES):
   scratch  Dustin's current DR10 forced photometry on pscratch (newest)
   cfs      Dustin's Dec 2024 - Jan 2025 DR10 run on CFS (RA 000-057)
-  archive  our Feb-Mar 2025 output (RA 060-063); raw inputs purged, so RM/LM/PM are rerun from its DCR columns
+  archive  our Feb-Mar 2025 output (RA 060-063); raw inputs purged, so inputs are rebuilt from it and all steps rerun
 
   python run_bricks.py 000-063 --dry-run          # count bricks per slice and source
   python run_bricks.py 000-015 --workers 128      # run
@@ -94,8 +94,9 @@ def run_brick(brick, src_dir, new_dir, is_archive):
     fn = f"forced-{brick}.fits"
     tractor_dir = new_dir if is_archive else src_dir
     S = STATE
-    steps = [("prep", lambda: S["prep"].prep_brick(fn, new_dir, src_dir)) if is_archive
-             else ("DCR", lambda: S["dcr"].create_brick_corrected_data(fn, new_dir, src_dir)),
+    # archive bricks: rebuild the inputs in new_dir (derived columns dropped), then redo every step from there
+    steps = ([("prep", lambda: S["prep"].prep_brick(fn, new_dir, src_dir))] if is_archive else []) + [
+             ("DCR", lambda: S["dcr"].create_brick_corrected_data(fn, new_dir, tractor_dir if is_archive else src_dir)),
              ("RM", lambda: S["rm"].create_brick_corrected_data(fn, new_dir, new_dir, S["tweaks"])),
              ("LM", lambda: S["lm"].create_brick_corrected_data(fn, new_dir, new_dir, tractor_dir, S["lm_model"])),
              ("PM", lambda: S["pm"].create_brick_catalogue(fn, new_dir, new_dir, tractor_dir))]
@@ -148,7 +149,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     t0 = time.time()
-    load_state(need_dcr=any(not a for *_, a in jobs))
+    load_state(need_dcr=bool(jobs))
     print(f"loaded calibration tables in {time.time() - t0:.0f} s", flush=True)
     gc.freeze()  # keep the shared tables' pages from being copied into every worker by the garbage collector
 
