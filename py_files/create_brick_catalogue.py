@@ -9,9 +9,13 @@ import sys
 import logging
 import time
 try:
-    from .error_model import total_error, SIGMA_SYS_MAS
+    from .colours import g_minus_i, COLOUR_SOURCE_NONE
 except ImportError:
-    from error_model import total_error, SIGMA_SYS_MAS
+    from colours import g_minus_i, COLOUR_SOURCE_NONE
+try:
+    from .error_model import total_error, header_cards, corrected_ddec_ivar
+except ImportError:
+    from error_model import total_error, header_cards, corrected_ddec_ivar
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,14 +36,24 @@ MIN_EPOCHS_FIT = 3
 FEW_EPOCHS = 10
 SHORT_BASELINE_DAYS = 730
 MAX_COND_NUMBER = 1e8
+#   BAD_EPOCH_NSIGMA: an epoch whose normalised fit residual |(data - model) / sigma_total| exceeds this in RA or Dec
+#     is "bad". Bad epochs are KEPT in the fit (Nada, 2026-10-23: flag, don't reject); pm_n_bad_epochs counts them.
+#     Residuals are from the 5-parameter fit (4-parameter if it failed).
+#   BAD_EPOCH_MAX_FRACTION: the object is flagged BAD_EPOCHS when at least this fraction of its epochs is bad.
+#     1-7% of all epochs are > 5 sigma (heavy tails, spread over all exposures), so "any bad epoch" mostly counted
+#     epochs (40% of clean objects flagged at 23 epochs, 80% at 55). On slice 000 clean Gaia stars, >= 10% flags 4.7%
+#     and catches 89% of |ours - Gaia| > 30 mas/yr (any: 37% / 95%) (PLAN A7; Nada, 2026-10-23).
+BAD_EPOCH_NSIGMA = 5.
+BAD_EPOCH_MAX_FRACTION = 0.10
 
 # pm_quality bits
 PMQ_FEW_EPOCHS = 1        # < FEW_EPOCHS measured epochs
 PMQ_SHORT_BASELINE = 2    # measured epochs span < SHORT_BASELINE_DAYS
-PMQ_NO_COLOUR = 4         # no g - i colour (flux_g or flux_i <= 0): no DCR or lateral-colour correction applied
+PMQ_NO_COLOUR = 4         # no g - i, measured or from g - z (colours.py): no DCR or lateral-colour correction applied
 PMQ_BRIGHT = 8            # Tractor maskbits BRIGHT or MEDIUM (near / is a bright star)
 PMQ_SATURATED = 16        # Tractor maskbits SATUR_G, SATUR_R, SATUR_Z or SATUR_I
 PMQ_FIT_FAILED = 32       # fewer than MIN_EPOCHS_FIT measured epochs, zero baseline, or a singular fit
+PMQ_BAD_EPOCHS = 64       # >= BAD_EPOCH_MAX_FRACTION of the epochs more than BAD_EPOCH_NSIGMA from the fit (kept)
 MASKBITS_BRIGHT = (1 << 1) | (1 << 11)
 MASKBITS_SATURATED = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14)
 
@@ -60,6 +74,7 @@ def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B):
         raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
 
     X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
+    chi = B - A @ X  # normalised residuals, RA epochs then Dec epochs
     X = X * 1000 # arcsec to mas
     # parallax, pmra_plx, pmdec_plx, ra_offset_plx, dec_offset_plx = X[0], X[1], X[2], X[3], X[4] # mas, mas/yr, mas/yr
     # ra_offset_plx = ra_offset_plx / 1000 # to arcsec
@@ -69,7 +84,7 @@ def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B):
     variances = np.diag(cov_matrix) * 1000**2
     # parallax_var, pmra_plx_var, pmdec_plx_var, ra_offset_plx_var, dec_offset_plx_var = variances
 
-    return X, variances  # all in mas
+    return X, variances, chi  # all in mas; chi dimensionless
 
 
 def pm_lsq(N, dt, dra_error, ddec_error, B):
@@ -84,6 +99,7 @@ def pm_lsq(N, dt, dra_error, ddec_error, B):
         raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
 
     X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
+    chi = B - A @ X  # normalised residuals, RA epochs then Dec epochs
     X = X * 1000
     # pmra, pmdec, ra_offset, dec_offset = X[0], X[1], X[2] # mas, mas/yr, mas/yr
 
@@ -91,12 +107,13 @@ def pm_lsq(N, dt, dra_error, ddec_error, B):
     variances = np.diag(cov_matrix) * 1000**2
     # pmra_var, pmdec_var, ra_offset_var, dec_offset_var = variances
 
-    return X, variances  # all in mas
+    return X, variances, chi  # all in mas; chi dimensionless
 
 
 def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
     """Fit one object. mjd, dra, ddec (arcsec) and the errors are that object's per-epoch measurements;
-    ra, dec its Tractor position (deg)."""
+    ra, dec its Tractor position (deg). Also returns n_bad, the number of epochs more than BAD_EPOCH_NSIGMA from
+    the fit in RA or Dec (5-parameter fit; 4-parameter if that failed; 0 if neither fit)."""
     ref_year = 0 # bc dra, ddec around 0, not actual ra, decs
     N = len(mjd)
     dra_ivar = 1 / dra_error ** 2
@@ -104,7 +121,7 @@ def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
                                                         # theoretically, dra_ivar ~= ddec_ivar
     baseline_days = mjd.max() - mjd.min() if N > 0 else 0
     if N < MIN_EPOCHS_FIT or baseline_days <= 0:   # no fit possible; data-quality limits are flagged by the caller
-        return None, None, None, None, ref_mjd
+        return None, None, None, None, ref_mjd, 0
 
     # change in ra, dec due to parallax = 1 arcsec, at each epoch (radec_at_mjd needs all-vector arguments)
     one = np.ones(N)
@@ -115,16 +132,18 @@ def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
     B = np.append(dra / dra_error, ddec / ddec_error)
 
     try:
-        X_plx, variances_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B)
+        X_plx, variances_plx, chi_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B)
     except np.linalg.LinAlgError as err:
-        X_plx, variances_plx = None, None
+        X_plx, variances_plx, chi_plx = None, None, None
 
     try:
-        X, variances = pm_lsq(N, dt, dra_error, ddec_error, B)
+        X, variances, chi = pm_lsq(N, dt, dra_error, ddec_error, B)
     except np.linalg.LinAlgError as err:
-        X, variances = None, None
+        X, variances, chi = None, None, None
 
-    return X_plx, variances_plx, X, variances, ref_mjd
+    chi = chi_plx if chi_plx is not None else chi
+    n_bad = 0 if chi is None else int(np.sum(np.maximum(np.abs(chi[:N]), np.abs(chi[N:])) > BAD_EPOCH_NSIGMA))
+    return X_plx, variances_plx, X, variances, ref_mjd, n_bad
 
 
 def reference_motion(tractor, objid, ref_mjd):
@@ -180,6 +199,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     ref_mjd = np.zeros(len(tractor_table[1].data))
     pm_n_epochs = np.zeros(len(tractor_table[1].data), dtype=np.int16)
     pm_baseline_days = np.zeros(len(tractor_table[1].data), dtype=np.float32)
+    pm_n_bad_epochs = np.zeros(len(tractor_table[1].data), dtype=np.int16)
 
     dra_ivar = forced_table[1].data.full_fit_dra_ivar
     ddec_ivar = forced_table[1].data.full_fit_ddec_ivar
@@ -193,11 +213,17 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         with np.errstate(divide='ignore'):
             dra_error = np.where(tot_ra > 0, 1 / np.sqrt(np.where(tot_ra > 0, tot_ra, 1)), np.inf)
             ddec_error = np.where(tot_dec > 0, 1 / np.sqrt(np.where(tot_dec > 0, tot_dec, 1)), np.inf)
-        sigma_sys = float(forced_table[1].header.get('SIGSYS', SIGMA_SYS_MAS))
+        hdr = forced_table[1].header   # the model the lateral step used (older files: one SIGSYS for all bands)
+        sys_cards = [(k, hdr[k], c) for k, _, c in header_cards() if k in hdr] or \
+                    [('SIGSYS', hdr.get('SIGSYS', 20.), 'systematic per-epoch error, all bands (mas)')]
+        sys_cards += [(k, hdr[k], hdr.comments[k]) for k in ('INPDATE', 'DDIVFIX', 'DECRATIO', 'DECFIX', 'DECBASIS') if k in hdr]
     else:
-        dra_error = total_error(dra_ivar)
-        ddec_error = total_error(ddec_ivar)
-        sigma_sys = SIGMA_SYS_MAS
+        filt = forced_table[1].data.filter
+        dra_error = total_error(dra_ivar, filt)
+        ddec_fixed, dec_cards = corrected_ddec_ivar(dra_ivar, ddec_ivar, forced_table[1].data.dec,
+                                                    forced_table[1].header.get('INPDATE'), forced_table[1].header.get('DDIVFIX'))
+        ddec_error = total_error(ddec_fixed, filt)
+        sys_cards = header_cards() + dec_cards
 
     psf_mask = tractor_table[1].data.type == 'PSF'
     J = np.flatnonzero(psf_mask)
@@ -206,8 +232,9 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     # object-level quality flags from the Tractor catalogue (see the PMQ_* bits); epoch-based bits are set per object
     tdat = tractor_table[1].data
     pm_quality = np.zeros(len(tdat), dtype=np.int16)
-    with np.errstate(all='ignore'):
-        has_colour = (np.asarray(tdat.flux_g) > 0) & (np.asarray(tdat.flux_i) > 0)
+    # g - i source used by the DCR / lateral-colour steps: 1 measured, 2 predicted from g - z, 0 none (colours.py)
+    _, colour_source = g_minus_i(tdat.flux_g, tdat.flux_i, tdat.flux_z)
+    has_colour = colour_source != COLOUR_SOURCE_NONE
     maskbits = np.asarray(tdat.maskbits).astype(np.int64)
     pm_quality[~has_colour] |= PMQ_NO_COLOUR
     pm_quality[(maskbits & MASKBITS_BRIGHT) != 0] |= PMQ_BRIGHT
@@ -249,7 +276,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         if pm_quality[i] & (PMQ_FEW_EPOCHS | PMQ_SHORT_BASELINE):
             n_insufficient_data += 1
         try:
-            X_plx, var_plx, X, var, rmjd = calculate_pm(
+            X_plx, var_plx, X, var, rmjd, n_bad = calculate_pm(
                 f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][objid], T['dec'][objid]
             )
         except Exception as e:
@@ -260,6 +287,9 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             continue
 
         success = True
+        pm_n_bad_epochs[i] = n_bad
+        if n_bad > 0 and n_bad >= BAD_EPOCH_MAX_FRACTION * n_ep:
+            pm_quality[i] |= PMQ_BAD_EPOCHS
 
         # reference motion the forced photometry already moved this source with (zero unless it is a Gaia star)
         ra0, dec0, ref_pm, ref_var = reference_motion(T, objid, rmjd)
@@ -335,12 +365,17 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     pm_table[1].columns.add_col(fits.Column(name="pm_quality", array=pm_quality, format='I'))
     pm_table[1].columns.add_col(fits.Column(name="pm_n_epochs", array=pm_n_epochs, format='I'))
     pm_table[1].columns.add_col(fits.Column(name="pm_baseline_days", array=pm_baseline_days, format='E', unit='d'))
+    pm_table[1].columns.add_col(fits.Column(name="pm_n_bad_epochs", array=pm_n_bad_epochs, format='I'))
+    pm_table[1].columns.add_col(fits.Column(name="pm_colour_source", array=colour_source, format='I'))
 
     print("done! now writing to file...")
 
     output_name = f"tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
     # record the error model that produced these PMs
-    pm_table[1].header['SIGSYS'] = (sigma_sys, 'systematic per-epoch error added in quadrature (mas)')
+    for key, val, comment in sys_cards:
+        pm_table[1].header[key] = (val, comment)
+    pm_table[1].header['BADNSIG'] = (BAD_EPOCH_NSIGMA, 'bad-epoch threshold (sigma)')
+    pm_table[1].header['BADFRAC'] = (BAD_EPOCH_MAX_FRACTION, 'BAD_EPOCHS if this fraction of epochs is bad')
     output_path = f"{new_dir}{output_name}"
     tmp_path = output_path + ".tmp"
     try:

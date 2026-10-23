@@ -33,7 +33,7 @@ OBJ_COLS = ['brickid', 'brickname', 'objid', 'type', 'ra', 'dec', 'ra_ivar', 'de
             'new_ra_plx', 'new_dec_plx', 'new_ra_plx_ivar', 'new_dec_plx_ivar',
             'pmra_no_plx', 'pmra_no_plx_ivar', 'pmdec_no_plx', 'pmdec_no_plx_ivar',
             'new_ra_no_plx', 'new_dec_no_plx', 'new_ra_no_plx_ivar', 'new_dec_no_plx_ivar', 'pm_flag', 'ref_mjd']
-QUALITY_COLS = ['pm_quality', 'pm_n_epochs', 'pm_baseline_days']
+QUALITY_COLS = ['pm_quality', 'pm_n_epochs', 'pm_baseline_days', 'pm_n_bad_epochs', 'pm_colour_source']
 EPOCH_COLS = ['brickid', 'brickname', 'objid', 'expnum', 'ccdname', 'filter', 'mjd', 'exptime', 'airmass',
               'ra', 'dec', 'x', 'y', 'dqmask', 'flux', 'flux_ivar', 'fracin',
               'full_fit_dra', 'full_fit_ddec', 'full_fit_dra_ivar', 'full_fit_ddec_ivar', 'full_fit_x', 'full_fit_y',

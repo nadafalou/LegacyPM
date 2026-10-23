@@ -13,6 +13,10 @@ import logging
 
 import numpy as np
 from astrometry.util.fits import fits_table, merge_tables
+try:
+    from .colours import g_minus_i, COLOUR_SOURCE_NONE
+except ImportError:
+    from colours import g_minus_i, COLOUR_SOURCE_NONE
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +157,8 @@ def _no_clash(T):
 
 
 # pm_quality bits, as in create_brick_catalogue (PMQ_*)
-PMQ = {'FEW_EPOCHS': 1, 'SHORT_BASELINE': 2, 'NO_COLOUR': 4, 'BRIGHT': 8, 'SATURATED': 16, 'FIT_FAILED': 32}
+PMQ = {'FEW_EPOCHS': 1, 'SHORT_BASELINE': 2, 'NO_COLOUR': 4, 'BRIGHT': 8, 'SATURATED': 16, 'FIT_FAILED': 32,
+       'BAD_EPOCHS': 64}  # BAD_EPOCHS needs the per-epoch residuals: only in catalogues made from 2026-10-23 on
 
 
 def quality_bits(T):
@@ -168,7 +173,11 @@ def quality_bits(T):
     if 'baseline_days' in cols:
         q |= np.where(T.baseline_days < 730, PMQ['SHORT_BASELINE'], 0)
     if 'flux_g' in cols and 'flux_i' in cols:
-        q |= np.where((T.flux_g > 0) & (T.flux_i > 0), 0, PMQ['NO_COLOUR'])
+        if 'flux_z' in cols:   # g - i measured or from g - z, as the pipeline does from 2026-10-23
+            has = g_minus_i(T.flux_g, T.flux_i, T.flux_z)[1] != COLOUR_SOURCE_NONE
+        else:
+            has = (T.flux_g > 0) & (T.flux_i > 0)
+        q |= np.where(has, 0, PMQ['NO_COLOUR'])
     if 'maskbits' in cols:
         mb = np.asarray(T.maskbits).astype(np.int64)
         q |= np.where(mb & ((1 << 1) | (1 << 11)), PMQ['BRIGHT'], 0)
