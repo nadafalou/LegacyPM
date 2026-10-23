@@ -1,6 +1,173 @@
 # LegacyPM progress tracker
 
-Last updated: 2026-10-14. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
+Last updated: 2026-10-23. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
+
+## CURRENT PLAN -- from the meetings with Dustin (2026-10-22) and James (2026-10-2x), in priority order
+Goal: submit the paper in ~2 weeks (Nada). James: two issues MUST be understood before submission (H1, H2).
+Ordering principle for the pipeline: every correction is built on the previous stage's output (DCR -> CCD maps ->
+lateral -> PM), so settle DCR first, rebuild the maps on top of it, then do ONE full rerun of 000-063 with all fixes.
+Steps A-C and H run on the combined files (no pipeline rerun needed).
+
+### H. Must-fix before submission (James) -- can start now, on the current 000-063 output
+- [~] H1. The vertical feature in F7 (our PM large where Gaia's is ~0). Started 2026-10-23: py_files/pm_outliers.py;
+      slice 000, 281k Gaia stars in the F7 selection, outlier = |ours - Gaia| > 30 mas/yr (4.2%).
+      TopCat file: combined/h1_gaia_stars_000.fits (all 281k stars, 74 columns: catalogue properties, per-star epoch
+      summaries -- chi_max, n_chi_gt5, resid_rms_mas, frac_edge, frac_dqmask, airmass, n_bands, n_years, max shift of
+      each correction -- refits, pulls, flags is_outlier / is_outlier_after_fix / is_pull_outlier / flag_*).
+      FINDINGS:
+      * Outliers are explained by identifiable conditions. Clean stars (G > 16, no bright/saturation maskbits, g-i
+        colour available, >= 10 epochs, baseline >= 2 yr; 55% of stars): outlier rate 0.13%. Rates after the fixes
+        below: baseline < 2 yr 25.7%, saturated (maskbits 2-4) 12.0%, BRIGHT/MEDIUM mask 10.2%, < 10 epochs 9.7%,
+        no g-i colour 7.7% (1.4% even when otherwise clean -- these stars get NO DCR or lateral correction).
+      * 28.6% of Gaia stars have no g-i colour (no i-band flux) -> no DCR/lateral correction at all. Needs a fallback
+        colour (g-r, or BP-RP for Gaia stars) in the DCR model (A2).
+      * BUG: 4.9% of epochs have full_fit_dra == 0 with ivar > 0 (no offset measured); the PM fit includes them (the
+        correction steps already treat them as invalid), and after the corrections 82% carry a fake non-zero offset.
+        For Gaia stars they pull the fit TOWARDS Gaia (dropping them raises outliers 4.1 -> 4.9%: the Gaia validation
+        is optimistic); for non-Gaia stars they pull PMs towards 0. Ask Dustin what they are; exclude them (D6).
+      * Fix test (refit all stars): drop zero-offset epochs + iterative 5-sigma epoch rejection: outliers 4.22 ->
+        3.33% (G 16-19: 3.07 -> 1.96%; G 19-21: 3.33 -> 2.42%); robust sigma of (ours - Gaia) 3.10/3.78 -> 2.81/3.29
+        mas/yr (RA/Dec). Bright stars (G < 16) stay ~12%.
+      * Worst bricks: a patch at Dec ~ +26 deg with 1-yr baseline and ~9 epochs (40-60% "outliers"). With so little
+        time coverage, a fixed 30 mas/yr threshold flags imprecise stars, not wrong ones -> also use pulls:
+        |pull| > 5: 16.9k stars, |dpm| > 30: 11.9k, both: 6.2k.
+      Internal plots: run/h1-outliers.ipynb -> run/plots/h1_*.png/pdf (TopCat: later, not now).
+      NEXT:
+      catalogue quality flags (saturation, no colour/no DCR, short time coverage) and a "clean" validation sample.
+- [x] H2 (2026-10-23): NOT a bug -- the plots measure different things. run/h2-correction-summary.ipynb ->
+      run/plots/h2_components_by_stage.pdf (py_files/dcr_fit.load_stage_sample; slice 000, 4.9M Gaia-star epochs with
+      sigma < 10 mas). g band, raw -> DCR: systematic offset along the parallactic direction (RMS of colour x airmass
+      cell medians = what F2/F3 show) 17.1 -> 3.7 mas (-78%); scatter along 24.7 -> 15.9 (-36%); scatter across
+      13.0 -> 13.0; total 2-D median (= F6) 22.7 -> 17.1 (-24%). DCR removes its own signal; the rest of each epoch's
+      error adds in quadrature, so the total drops ~25%. r: 6.1 -> 2.0 systematic, total 16.0 -> 15.1.
+      Also: g-band CCD maps worsen BOTH directions (along 15.9 -> 18.6, across 13.0 -> 16.1): adds ~10 mas in
+      quadrature -> B1. And after DCR the along-parallactic scatter still exceeds the across scatter (g 15.9 vs 13.0,
+      r 13.6 vs 11.9, i 13.6 vs 12.3): an extra ~6-9 mas along the parallactic direction not removed by a colour x
+      airmass model (turbulence/refraction?) -- likely the Dec pull excess (H4).
+- [ ] H3. Error budget table for the paper (James): RMS scatter of Gaia-star epochs before/after each correction
+      (DCR, CCD maps, lateral) per band, along-parallactic and total, over the full catalogue; also the floor and the
+      bright-star excess (pull width > 2 at G < 15.5).
+- [ ] H4. RA vs Dec performance (F8, F9: Dec worse) -- expected to clarify with H1; pull width vs Dec suggests an
+      airmass / parallactic-direction effect (see FINDINGS).
+- [ ] H5. Check the relative-colour definition (James asked; also a real anomaly): c_rel of the calibration stars peaks
+      at ~-0.8, not 0, so the reference colour (-0.56 + 1.34 BP-RP of the CCD's reference stars) is ~0.5-0.8 mag
+      redder than our Gaia stars; the DCR constant terms point the same way. Is ccdbprp the mean colour of all
+      astrometric reference stars (incl. fainter, redder ones)? Ask Dustin for the definition + citation.
+- [ ] H6. Colour-magnitude diagram of the DCR calibration stars (James): do the two colour modes correspond to stellar
+      populations (disk vs halo, Pop I vs Pop II, turnoff vs K/M dwarfs) or depend on magnitude? Exploratory figure.
+
+### A. DCR model (blocks B-E; decision with Dustin)
+- [x] A1 (2026-10-22): run/dcr-polyfit.ipynb (py_files/dcr_fit.py; geometry in py_files/dcr_geometry.py so analysis
+      needn't load brick_DCR's 14 GB table). 80.7M Gaia-star epochs (sigma < 10 mas) from a random 25% of bricks in
+      all 64 slices (cached: combined/dcr_sample_000-063_0.25.npz); fit on half the bricks, scored on the other half.
+      Figures for Dustin in run/plots/: dcr_polyfit.pdf, dcr_curvature_g_r.pdf, dcr_tanz_polyfit.pdf.
+      * Polynomials in x = c_rel tan z: held-out RMS falls with order in g (2.5 -> 0.36 mas binned in x), but don't help
+        r/i at all once tested in (c_rel, tan z) cells, and high orders blow up in sparse corners.
+      * The curvature is in COLOUR, not x: offset / tan z vs c_rel is the same curve at all airmasses
+        (dcr_curvature_g_r.pdf). Model DCR = tan z x P(c_rel) beats polynomials in x in every band. Held-out wRMS (mas),
+        linear-x (current) / x order 5 / tan z x order 2 / tan z x order 4:
+        g 2.57 / 1.24 / 1.53 / 1.15;  r 1.18 / 1.15 / 0.63 / 0.60;  i 0.78 / 0.76 / 0.46 / 0.41;  z 0.51 / 0.49 / 0.43 / 0.42.
+      * Data flatten at the colour extremes (c_rel < ~-1.5, > ~2.2), which no polynomial follows.
+      * PROPOSAL for Dustin: DCR = tan z x quadratic(c_rel), c_rel clamped to ~[-1.5, 2.2]; z can stay linear.
+        Quadratic coefficients (mas per unit tan z, c^2, c, const; 5% sample): g -4.16 32.39 0.33; r 1.08 8.73 -2.33;
+        i 0.61 4.39 -1.92; z (linear) 1.38 -0.45. The constant terms in r/i (~-2 mas/tan z) mean stars at the
+        reference colour still shift with airmass: equivalent to the (g-i)_ref transformation being ~0.3-0.4 mag off.
+- [x] A1b (2026-10-22, James's suggestion: two linear fits / "two modes"): run/dcr-polyfit.ipynb section "Two linear
+      fits"; figures run/plots/dcr_twolines.pdf, dcr_two_modes.pdf. The two modes are COLOUR populations (blue turnoff vs
+      red K/M dwarfs; c_rel is bimodal): g slope 40.6 for c_rel < 0.1 vs 26.1 above; splitting by airmass gives no
+      difference (30.9 vs 32.5). Held-out wRMS in (c_rel, tan z) cells, tan z x broken line in colour: g 1.25, r 0.55,
+      i 0.42, z 0.43 mas -- best or joint-best in every band (beats tan z x quadratic in r/i; ties two-lines-in-x and
+      x order 5 in g). Breaks / slopes (blue, red; mas per mag per tan z): g 0.10 / 39.5, 24.6; r 0.75 / 8.0, 13.2;
+      i 0.50 / 3.5, 6.3; z 0.40 / 1.2, 1.6. NEW PROPOSAL: DCR = tan z x broken line in c_rel, c_rel clamped ~-1.5.
+- [ ] A2. Decide the model with Dustin (send run/plots/dcr_tanz_polyfit.pdf, dcr_twolines.pdf, dcr_two_modes.pdf):
+      current proposal tan z x broken line in c_rel (James's two modes), clamped at c_rel ~ -1.5. Then update brick_DCR
+      (correction = tan z x f_b(c_rel) instead of K_b c_rel tan z) and dcr_fit for the coefficients.
+- [ ] A3. Remake F3 for the paper with the chosen model (data + fit only; done for the linear fit).
+### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
+- [ ] B1. Recompute DCR on the combined Gaia-star epochs with the new model; build ringmaps from ALL 000-063 Gaia
+      stars (sigma < 10 mas), replacing the Apr 2024 maps (~60 stars/bin then; far more now). Expected to fix the
+      g-band problem (CCD maps currently make g worse: 15.6 -> 18.3 mas). (James: the ring-map section/figures are fine.)
+- [ ] B2. Check per band that the new maps improve scatter; regenerate F4a (one CCD) and F4b (whole focal plane)
+      from the new maps (run/ringmap-plots.ipynb: point RINGMAPS_PATH at the new file).
+### C. Lateral colour (needs B1) -- James: the correction looks right
+- [ ] C1. Refit the smooth lateral model on the new CCD-map output (also re-check the pivot c0: data median 1.77).
+- [ ] C2. Investigate the colour-independent left/right dipole left in F5 (not lateral colour; CCD maps / WCS?).
+### D. Pipeline fixes to include in the rerun
+- [ ] D1. objid clashes: key brick_DCR's colour lookup and create_brick_catalogue's row grouping on (brickid, objid).
+- [ ] D2. Archive bricks (548): raw full_fit_* columns survive, so prep_archive_rerun must also drop dcr_* columns and
+      the run must redo DCR (currently it starts from the archived DCR columns = old amplitudes).
+- [x] D3. Done with D6.
+- [ ] D4. From H1: iterative 5-sigma epoch rejection in the PM fit (outliers 4.2 -> 3.3% on slice 000).
+- [x] D6 (2026-10-23, Nada: don't use what the inputs don't trust): create_brick_catalogue now fits only measured
+      epochs (ivar > 0 and full_fit_dra != 0); also covers D3 (epoch/baseline cuts count measured epochs). Tested on
+      0001m002: only stars with unmeasured epochs change (median 0.03-0.05 sigma); Gaia RA scatter 1.81 -> 2.12
+      mas/yr there (the fake epochs had pulled Gaia stars towards Gaia). Takes effect in the rerun.
+- [ ] D7. From H1: catalogue quality flags (saturated / bright mask, no g-i colour = no DCR, short time coverage).
+- [ ] D5. Magnitude/band-dependent error floor (pull width > 2 at G < 15.5), from H3.
+- [x] D8 (2026-10-23, Nada: flag, don't cut): create_brick_catalogue computes a PM for every PSF object with >= 3
+      measured epochs and a non-zero baseline; quality goes in the new bitmask pm_quality (1 FEW_EPOCHS < 10,
+      2 SHORT_BASELINE < 730 d, 4 NO_COLOUR (no DCR/lateral correction), 8 BRIGHT (maskbits BRIGHT|MEDIUM),
+      16 SATURATED (SATUR_G/R/Z/I), 32 FIT_FAILED), plus pm_n_epochs and pm_baseline_days. pm_flag unchanged
+      (1 both fits OK, 0 no fit, -1 not PSF). Analysis/figures use clean = pm_quality == 0
+      (pm_analysis.clean_mask / gaia_star_mask(clean=True) -- rebuilt from columns for pre-rerun output; 53% of Gaia
+      stars in slice 000). combine_catalogue carries the new columns. Tested on 0001m002 (83% of PSF objects clean).
+- [x] D9 (2026-10-23, Nada): realistic per-epoch error sigma_total = sqrt(sigma_stat^2 + sigma_sys^2), sigma_sys = 20 mas,
+      in py_files/error_model.py (replaces the 14.8 mas floor). The lateral step writes full_fit_{dra,ddec}_ivar_total
+      (+ header SIGSYS) to the corrected forced files; the PM fit reads those columns (falls back to computing them for
+      older files) and writes SIGSYS into each catalogue header. Check (run/pm-error-model.ipynb): realistic PM errors match
+      the scatter of ours - Gaia for bright clean Gaia stars (~2.2 mas/yr), slightly conservative in RA.
+### E. Full rerun of 000-063 (needs A2, B1, C1, D1-D2 (+D4/D5); ~20-25 node-hours, 4 jobs) -> combine -> rsync to CFS
+### F. Figures
+- [x] Quick plot changes (2026-10-22, tested on 000-001; F2/F3 on 058): F1 median lines (outlined) + 16-84% band,
+      faint points; F2 >= 100 epochs per bin, coarser bins; F3 data + fit only; F5 three rows (data before / smooth
+      model / data after), >= 50 epochs per bin; F6 one panel per band, valid fits only (full_fit_dra != 0), bins
+      >= 500 epochs; F7 dashed 1:1; F8 legend gives |pull| > 5 fraction. Diagnostics in run/plots/:
+      pm_vs_gaia_by_mag.png, pull_width_vs_dec_G.pdf.
+- FINDINGS from those (2026-10-22):
+  * F5: the smooth model reproduces the colour-dependent edge pattern and the residual row removes it. A left/right
+    dipole remains in all three colour bins: colour-independent, so not lateral colour (CCD maps / WCS?).
+  * F7 stripe: NOT just faint stars (that earlier explanation was wrong). |ours - Gaia| > 30 mas/yr for 2.4-3.2% of
+    Gaia stars at G 16-21, 5% at G 15-16, 8.7% at G 14-15 (slices 000-001). Same population as the F8 tails
+    (|pull| > 5: 3.3% RA, 4.5% Dec, 3.6% parallax; 0.00006% for a Gaussian). -> NEW TASK: investigate outliers
+    (epochs, baseline, bad epochs/blends/saturation; robust (clipped) PM fit?).
+  * Pull width vs Dec: Dec pulls grow far from Dec ~ -20..+10 (2.5 at -85, 1.9 at +35); RA much flatter. Consistent
+    with an airmass / parallactic-direction effect (DCR or refraction residual).
+  * Pull width vs G: both components > 2 for G < 15.5 (2.6-2.8 at G 14.5), ~1.0 (RA) / 1.3 (Dec) for G > 17:
+    the 14.8 mas floor is too small for bright stars -> magnitude/band-dependent error floor (error analysis task).
+- [x] F13 (2026-10-23): PM uncertainty vs magnitude (run/pm-error-model.ipynb -> writeup/plots/pm_errors_vs_mag.pdf):
+      Gaia formal errors, our statistical-only and realistic (sigma_sys = 20) errors, and the robust scatter of
+      ours - Gaia; 100 bricks of slice 000. Internal: run/plots/pull_near_zero_gaia.pdf (Gaia stars with |Gaia PM| < 30:
+      (ours - Gaia)/sigma width 1.08 RA / 1.30 Dec for clean stars, 1.12 / 1.49 flagged; old 14.8 floor).
+- [ ] F12 (NEW, James): completeness / numbers vs magnitude -- stars with PMs from us vs Gaia (with and without a Gaia
+      PM), per magnitude bin, to show the added value (fainter than G ~ 21, and Gaia stars lacking PMs).
+- [ ] F8: write up how the formal errors are built (per-epoch stat. error + 14.8 mas floor in quadrature -> LSQ
+      covariance; Gaia variance added for Gaia stars) and what pulls mean.
+- [ ] F9 past G = 21 (Dustin: the value is beyond Gaia's limit) -- needs a non-Gaia reference (e.g. galaxies/QSOs
+      should have zero PM) -- design with Dustin.
+- [ ] Run the catalogue figures (F7-F11) on all of 000-063 (compute node); regenerate all figures after E;
+      re-derive the error floor from F6.
+### I. Paper text and science
+- [ ] I0. Catalogue description: a table/list of all cuts and flags (pm_flag, pm_quality bits with thresholds,
+      objid_clash, what is excluded from fits: unmeasured epochs, non-PSF), and possibly of all output columns
+      (name, unit, meaning) -- for the paper's data-product section and a README with the catalogue.
+- [ ] I1. Application section (James): research what science PM catalogues enable (disk vs halo kinematics,
+      hypervelocity stars beyond escape speed, halo structure); compare our PM distribution with Gaia-based catalogues
+      and fit models. Plan the section this week.
+- [ ] I2. Science justification for PMs at 22-25 mag (James): what specifically do faint PMs enable? (with F12)
+- [ ] I3. Note in the paper: the net positive pmra / negative pmdec of Gaia stars in this RA range is Galactic
+      structure + solar reflex motion (James), not a systematic.
+- [ ] I4. Parallax section: include for completeness with the explanation (Legacy Surveys observes each field at
+      about the same time of year, so the parallax ellipse is barely sampled) (Dustin, James).
+- [ ] I5. Sections to update: lateral (binned -> smooth model), DCR (new model), sample description, error budget (H3),
+      results; captions and slots for F1, F5-F12.
+### G. Still open from before
+- [ ] Missing bricks to Dustin (missing_bricks.txt: 058-059 + 557 gaps); ask about CFS space for ~3.5 TB of forced
+      files; ask for the (g-i) <-> BP-RP citation (with H5).
+- [ ] High-PM / non-Gaia candidates (after E; feeds I1).
+- [ ] Commit the figure and DCR work (notebooks, plot_style, dcr_fit, dcr_geometry, writeup/plots, run/plots).
+- [ ] Low priority: MongoDB login for FireWorks.
+### Meetings
+- [ ] James: Tuesday 1:00 pm (send a reminder Tuesday morning). Dustin: Thursday, usual time; Slack updates meanwhile.
 
 ## Paper (writeup/main.tex)
 
@@ -20,6 +187,11 @@ Last updated: 2026-10-14. Status keys: [x] done · [~] in progress · [ ] todo �
 - [ ] Nada to review all Step-1 edits (marked with `\todo` where a number/fact needs confirming)
 
 ### Step 2: figures (all from notebooks in run/, saved to writeup/plots/; shared style py_files/plot_style.py)
+All figures have a title and shared axes where panels share them (2026-10-14). Decisions: F1 in mas, r 14-25,
+300k-point subsample per class; F2 r band, +-50 mas, bins with >= 15 epochs; F3 sigma < 10 mas epochs, binned medians
+(>= 30 per bin), error-weighted line; F5 g band (largest effect), +-15 mas, ~0.05 deg hexes with >= 10 epochs;
+F6 g-band epochs only (per-epoch magnitude), bins with >= 100 epochs; F7-F10 Gaia stars with a Gaia 5-parameter
+solution and pm_flag == 1, no objid clash; F11 per-brick medians.
 Notebooks repointed (2026-10-12) to the combined per-slice files from slurm/combine_catalogue.py (RUNBOOK section 6).
 Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write all their figures.
 | # | Figure | Notebook / cell | Status |
@@ -27,7 +199,8 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
 | F1 | Positional σ vs mag, Gaia vs LS (Dustin's request) | err-plots cell 5 -> pos_err_vs_mag.png | [ ] code ready |
 | F2 | DCR before/after hexbin (replace DRC.png) | dcr-plots cell 11 -> dcr_before_after.png | [ ] code ready; units bug fixed 2026-10-14 |
 | F3 | K_b fit per band | dcr-plots cell 13 -> dcr_amplitude_fit.pdf | [ ] code written + tested 2026-10-14 |
-| F4 | Tree-ring maps: one CCD + whole focal plane (Dustin) | run/ringmap-plots.ipynb -> ringmap_N4_z.pdf, ringmap_focal_plane_z.png | [x] 2026-10-14, in main.tex |
+| F4a | Tree-ring map, one CCD (N4, z) | run/ringmap-plots.ipynb cell 2 -> ringmap_N4_z.pdf; main.tex fig:ringmaps | [x] 2026-10-14 (2024 maps); remake after B1 |
+| F4b | Tree-ring maps, whole focal plane (all 61 CCDs, z; Dustin) | run/ringmap-plots.ipynb cell 3 -> ringmap_focal_plane_z.png; main.tex fig:ringmaps_fp | [x] 2026-10-14 (2024 maps); remake after B1 |
 | F5 | Lateral colour focal-plane maps, before/after | err-plots cell 26 -> lateral_colour_bins.png | [ ] code ready (2 rows: before/after LM) |
 | F6 | Residual scatter vs mag per correction stage | err-plots cell 8 | [ ] labels fixed 2026-10-12; run on real data |
 | F7 | PM residual (ours − Gaia) vs G | err-plots cell 31 | [ ] adapt to hexbin |
@@ -110,6 +283,13 @@ Tested end to end on slice 058 (6 bricks): err-plots and dcr-plots run and write
   brick_lateralmaps.py applies them with magnitude colour g−i around pivot 1.642. Check which colour built the
   `lateralmaps.fits` actually in use.
 - DCR K_i = K_z = 1 rather than 0 (see open questions).
+- **g-band CCD maps make positions worse (found 2026-10-14 from F6).** Per-axis robust sigma of Gaia-star epochs with
+  sigma < 10 mas, slice 000 (raw / DCR / +CCD maps / +lateral): g 18.98 / 15.58 / 18.26 / 17.77; r 13.30 / 12.74 /
+  12.20 / 12.16; i 12.51 / 12.41 / 11.63 / 11.70; z 11.30 / 11.29 / 11.00 / 11.00 mas. In g, DCR + lateral WITHOUT the
+  CCD maps gives 15.03 mas. The g maps shift positions by a median 14 mas (90th pct 33). Likely cause: the Apr 2024
+  maps were built after a different DCR correction, so they absorbed a g-band DCR residual (or g maps are noisy).
+  Fix options: skip the CCD maps in g (cheapest), or rebuild them. Needs the RM/LM/PM steps rerun -- combine with
+  the K_b and objid fixes into one rerun. Also likely behind the pmdec pull width 1.40 vs pmra 1.10 (F8).
 - **objid clashes (found 2026-10-14, when combine crashed on slice 002):** ~18% of tractor catalogues have rows from
   neighbouring bricks appended at the end (other brickid, own objid numbering; e.g. large SGA galaxies), and ~3% of
   forced files include those sources' epochs. The brick's own sources always have objid == row. Two pipeline steps

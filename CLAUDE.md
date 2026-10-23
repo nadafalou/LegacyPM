@@ -20,8 +20,11 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    noise-dominated and is no longer used.)
    Steps 2-3 build maps from σ < 10 mas measurements but apply them to every measurement with a valid fit.
 4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `lm_full_fit_*`, PSF sources only,
-   4-param (PM) and 5-param (PM+parallax) fits; 14.8 mas floor added in quadrature to per-epoch errors;
-   cuts MIN_EPOCHS=5, MIN_BASELINE_DAYS=180, cond<1e8.
+   measured epochs only (ivar > 0 and full_fit_dra != 0); 4-param (PM) and 5-param (PM+parallax) fits. Per-epoch
+   error = sqrt(stat^2 + sigma_sys^2), sigma_sys = 20 mas (`py_files/error_model.py`; the lateral step writes
+   `full_fit_*_ivar_total` + header SIGSYS, which the PM fit reads; catalogues record SIGSYS in their header). Quality is FLAGGED, not cut: PMs for every PSF object with >= 3 measured epochs;
+   `pm_quality` bitmask (FEW_EPOCHS < 10, SHORT_BASELINE < 730 d, NO_COLOUR, BRIGHT, SATURATED, FIT_FAILED).
+   Figures/analysis use clean objects only (`pm_analysis.clean_mask`, pm_quality == 0); catalogues keep everything.
    Gaia stars (ref_epoch > 0) are measured relative to their Gaia motion by the forced photometry; the Gaia PM/parallax
    is added back, so all output PMs, parallaxes and positions (float64) are absolute. Catalogues made before
    2026-10-12 (incl. the archive) have relative Gaia PMs, unweighted offset terms and wrong positions -> rerun.
