@@ -8,9 +8,13 @@ import sys
 import logging
 import time
 try:
-    from .error_model import total_ivar, SIGMA_SYS_MAS
+    from .colours import g_minus_i
 except ImportError:
-    from error_model import total_ivar, SIGMA_SYS_MAS
+    from colours import g_minus_i
+try:
+    from .error_model import total_ivar, header_cards, corrected_ddec_ivar
+except ImportError:
+    from error_model import total_ivar, header_cards, corrected_ddec_ivar
 
 logging.basicConfig(
     level=logging.INFO,
@@ -159,7 +163,7 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
     ccdnames = np.unique(corr_table[1].data.ccdname)
     t = fits_table(tractor_dir + "/tractor-forced-" + filename[-13:])
 
-    t.color = -2.5 * (np.log10(t.flux_g / t.flux_i))
+    t.color = g_minus_i(t.flux_g, t.flux_i, t.flux_z)[0]  # measured, else from g - z (colours.py)
     oidmap = dict([((b,o),i) for i,(b,o) in enumerate(zip(t.brickid, t.objid))])
     t_index = np.array([oidmap.get((b,o), -1) for b,o in zip(forced_table[1].data.brickid, forced_table[1].data.objid)])
     dc = t.color[t_index]
@@ -202,10 +206,16 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
 
     # total per-epoch inverse variance of the corrected positions: statistical + systematic floor (error_model.py);
     # this is what the PM fit uses
+    # (the input Dec ivar is first corrected for the legacypipe cos^2(Dec) bug if this brick has it; error_model.py)
+    D = corr_table[1].data
+    stat_ivar = {'dra': D.full_fit_dra_ivar}
+    stat_ivar['ddec'], dec_cards = corrected_ddec_ivar(D.full_fit_dra_ivar, D.full_fit_ddec_ivar, D.dec,
+                                                       corr_table[1].header.get('INPDATE'), corr_table[1].header.get('DDIVFIX'))
     for ax in ('dra', 'ddec'):
         corr_table[1].columns.add_col(fits.Column(name=f"full_fit_{ax}_ivar_total", format='E', unit='arcsec^(-2)',
-                                                  array=total_ivar(corr_table[1].data[f"full_fit_{ax}_ivar"])))
-    corr_table[1].header['SIGSYS'] = (SIGMA_SYS_MAS, 'systematic error in full_fit_*_ivar_total (mas)')
+                                                  array=total_ivar(stat_ivar[ax], D.filter)))
+    for key, val, comment in header_cards() + dec_cards:   # systematic error per band; Dec-ivar diagnosis
+        corr_table[1].header[key] = (val, comment)
 
     output_path = f"{ corr_dir }{ filename }"
     tmp_path = output_path + ".tmp"
