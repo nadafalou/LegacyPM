@@ -49,7 +49,7 @@ def header_cards():
 # The forced photometry divided full_fit_ddec_ivar by cos^2(Dec) (like the RA term, wrongly) until legacypipe commit
 # 7aece157 (Dustin, 2026-09-16, "forced-motions: remove cos(dec) term from dec invvar"); positions were not affected.
 # Decision, in order: (1) the input header card DDIVFIX (Dustin, 2026-10-23: T = fixed; added to files he writes or
-# patches from now on); (2) otherwise the input file's date (header INPDATE, stamped by brick_DCR from the
+# patches from now on; in the input's PRIMARY header, copied to the table header by brick_DCR); (2) otherwise the input file's date (header INPDATE, stamped by brick_DCR from the
 # file Dustin wrote, or by prep_archive_rerun for archive bricks): written before DEC_IVAR_FIX_DATE -> affected, and
 # its ddec ivar is multiplied by cos^2(Dec). Survey 2026-10-23 (1627 input bricks of 000-063): CFS files are dated
 # 2024-12 .. 2025-01 and all show sigma_Dec / sigma_RA = cos(Dec); scratch files are dated 2026-09-17 .. 2026-10-10 and

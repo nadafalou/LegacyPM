@@ -73,9 +73,10 @@ def brick_residuals(args):
     band = np.char.strip(F['filter'].astype(str))
     # statistical ivars as the pipeline uses them (Dec corrected for the cos^2(Dec) bug where the brick has it)
     ivar = {'ra': F['full_fit_dra_ivar'].astype(float)}
-    hdr = fitsio.read_header(os.path.join(deg_dir, f"forced-{brick}.fits"), 1)   # the pipeline's record, if any
+    path = os.path.join(deg_dir, f"forced-{brick}.fits")
+    hdr, hdr0 = fitsio.read_header(path, 1), fitsio.read_header(path, 0)   # the pipeline's record, if any
     ivar['dec'], cards = corrected_ddec_ivar(F['full_fit_dra_ivar'], F['full_fit_ddec_ivar'], F['dec'],
-                                             inpdate or hdr.get('INPDATE'), hdr.get('DDIVFIX'))
+                                             inpdate or hdr.get('INPDATE'), hdr.get('DDIVFIX', hdr0.get('DDIVFIX')))
     out['decfix'] = np.full(len(F), dict((k, v) for k, v, _ in cards)['DECFIX'])
     for ax, dcol in (('ra', 'lm_full_fit_dra'), ('dec', 'lm_full_fit_ddec')):
         out[f'res_{ax}'] = (line_residuals(row, t, F[dcol].astype(float), total_error(ivar[ax], band), n_obj) * 1000).astype(np.float32)

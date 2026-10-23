@@ -210,7 +210,8 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
     D = corr_table[1].data
     stat_ivar = {'dra': D.full_fit_dra_ivar}
     stat_ivar['ddec'], dec_cards = corrected_ddec_ivar(D.full_fit_dra_ivar, D.full_fit_ddec_ivar, D.dec,
-                                                       corr_table[1].header.get('INPDATE'), corr_table[1].header.get('DDIVFIX'))
+                                                       corr_table[1].header.get('INPDATE'),
+                                                       corr_table[1].header.get('DDIVFIX', corr_table[0].header.get('DDIVFIX')))
     for ax in ('dra', 'ddec'):
         corr_table[1].columns.add_col(fits.Column(name=f"full_fit_{ax}_ivar_total", format='E', unit='arcsec^(-2)',
                                                   array=total_ivar(stat_ivar[ax], D.filter)))
