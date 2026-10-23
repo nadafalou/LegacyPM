@@ -16,8 +16,11 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    g−i from `py_files/colours.py`: measured, else predicted from g−z (cubic, `colour_fallback.json`, fit by
    `run/colour-fallback.ipynb`; 0.025 mag; only for 0 < g−i < 3.2). c_rel = (g−i) − ref colour of the exposure/CCD,
    ref colour = −0.56 + 1.34·(Gaia BP−RP) from `survey-ccds-decam-dr10-bprp-kd.fits`.
-2. `py_files/brick_ringmaps.py` -> `rm_full_fit_*`. Per CCD × filter maps of median (Gaia − measured) offset,
-   16-px bins, bilinear spline. Maps: `ringmaps.fits`.
+2. `py_files/brick_ringmaps.py` -> `rm_full_fit_*`. Per CCD × filter maps of median (measured − Gaia) offset,
+   16-px bins, bilinear spline. Maps since 2026-10-23: `ringmaps-dr10.fits` (CFS ls-motions/rm-corrected-forced-motions/),
+   rebuilt from all 000-063 Gaia stars after the two-line DCR by `py_files/ringmap_build.py`, validated in
+   `run/ringmap-build.ipynb` (removes 6-8 mas per axis in every band on held-out bricks; the Apr 2024
+   `ringmaps.fits` added 9 mas in g).
 3. `py_files/brick_lateralmaps.py` -> `lm_full_fit_*`. Smooth lateral-colour model (since 2026-10-10): shift =
    (g−i − 1.642) × 2-D order-3 polynomial in focal-plane position, per filter. Coefficients:
    `py_files/lateral_model_poly3.json`, fit by `run/lateral-model.ipynb`. (The old binned `lateralmaps.fits` was
@@ -29,7 +32,7 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    `run/pull-vs-mag.ipynb`; the lateral step writes `full_fit_*_ivar_total` + headers SIGSYS_G..Z, which the PM fit
    reads and copies). INPUT BUG: forced photometry before legacypipe 7aece157 (2026-09-16) has `full_fit_ddec_ivar`
    too large by 1/cos^2(Dec) (all CFS inputs, archive bricks; scratch 000-063 inputs are fixed). The lateral step
-   multiplies it by cos^2(Dec) when the input is affected, decided by Dustin's header card DDIVFIX if present, else by
+   multiplies it by cos^2(Dec) when the input is affected, decided by Dustin's header card DDIVFIX = T if present (input PRIMARY header; all scratch inputs have it since 2026-10-23), else by
    the input file date (INPDATE, stamped by brick_DCR), else by the data (`error_model.corrected_ddec_ivar`); headers
    record DECFIX / DECBASIS / DECRATIO. Quality is FLAGGED, not cut: PMs for every PSF object with >= 3 measured epochs;
    `pm_quality` bitmask (FEW_EPOCHS < 10, SHORT_BASELINE < 730 d, NO_COLOUR, BRIGHT, SATURATED, FIT_FAILED,

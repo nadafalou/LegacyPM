@@ -149,18 +149,29 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       A per-brick data test can't be the rule (real PSF elongation along Dec raises sigma_Dec/sigma_RA by 5-8% in the
       north, comparable to 1 - cos Dec at |Dec| < 35). Rule: DDIVFIX if present, else input date (INPDATE header,
       stamped by brick_DCR / prep_archive_rerun), else data. Tested on 0600m045 (scratch, not corrected) and 0010m295
-      (CFS, corrected). Pulls on slice 000 with it: faint widths 0.90-1.02 in RA and Dec at all Dec.
+      (CFS, corrected). 2026-10-23: Dustin patched all his pscratch inputs with DDIVFIX = T (boolean, in the PRIMARY
+      header); brick_DCR copies it to the table header; verified on 0600m045 (DECBASIS = DDIVFIX). Pulls on slice 000 with it: faint widths 0.90-1.02 in RA and Dec at all Dec.
 ### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
-- [ ] B1. Recompute DCR on the combined Gaia-star epochs with the new model; build ringmaps from ALL 000-063 Gaia
+- [x] B1 (2026-10-23) py_files/ringmap_build.py on a compute node (35 min): 294M Gaia-star epochs of 000-063
+      (sigma < 10 mas, with colour, not bright/saturated), new DCR removed. Held-out bricks (20%), per-axis scatter g/r/i/z:
+      none 14.60/13.11/12.37/11.33; 2024 maps 17.14/12.31/11.27/10.82; new 16 px 12.41/10.82/9.87/9.56 (best; 28-45
+      epochs per bin); 32 px 12.67/11.17/10.20/9.73; 64 px 13.22/11.77/10.78/10.06. Adopted 16 px ->
+      CFS ls-motions/rm-corrected-forced-motions/ringmaps-dr10.fits (2024 file kept); brick_ringmaps.RINGMAPS_PATH points
+      at it and infers the bin size from the map shape. run/ringmap-build.ipynb; F4a/F4b regenerated.
+      Was: Recompute DCR on the combined Gaia-star epochs with the new model; build ringmaps from ALL 000-063 Gaia
       stars (sigma < 10 mas), replacing the Apr 2024 maps (~60 stars/bin then; far more now). Expected to fix the
       g-band problem (CCD maps currently make g worse: 15.6 -> 18.3 mas). (James: the ring-map section/figures are fine.)
-- [ ] B2. Check per band that the new maps improve scatter; regenerate F4a (one CCD) and F4b (whole focal plane)
+- [x] B2 (2026-10-23, with B1). Check per band that the new maps improve scatter; regenerate F4a (one CCD) and F4b (whole focal plane)
       from the new maps (run/ringmap-plots.ipynb: point RINGMAPS_PATH at the new file).
 ### C. Lateral colour (needs B1) -- James: the correction looks right
 - [ ] C1. Refit the smooth lateral model on the new CCD-map output (also re-check the pivot c0: data median 1.77).
 - [ ] C2. Investigate the colour-independent left/right dipole left in F5 (not lateral colour; CCD maps / WCS?).
 ### D. Pipeline fixes to include in the rerun
-- [ ] D1. objid clashes: key brick_DCR's colour lookup and create_brick_catalogue's row grouping on (brickid, objid).
+- [x] D1 (2026-10-23) done: brick_DCR colour lookup and create_brick_catalogue grouping + row indexing on
+      (brickid, objid); unmatched objects get no colour (was g-i = 0); tractor-pm header OBJKEY, and combine sets
+      objid_clash only for older outputs. Test 0201m135 (69 clashing PSF objects): epoch counts = own epochs for every
+      PSF row; all 2067 measured epochs of clashing objects get their own colour; 0600m045 (no clashes) identical.
+      Was: objid clashes: key brick_DCR's colour lookup and create_brick_catalogue's row grouping on (brickid, objid).
 - [x] D2 (2026-10-23). prep_archive_rerun drops dcr_*/dp1/colour_airmass too; run_bricks redoes DCR on archive
       bricks. Was: Archive bricks (548): raw full_fit_* columns survive, so prep_archive_rerun must also drop dcr_* columns and
       the run must redo DCR (currently it starts from the archived DCR columns = old amplitudes).

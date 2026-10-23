@@ -52,7 +52,7 @@ pscratch clone; consider deleting the home one to avoid confusion.
   `lm_` columns), `tractor-pm-<brick>.fits` (the catalogue), `logs/<brick>.log`, `failed.txt`.
 - **pscratch is purged** (files untouched for ~8 weeks). Everything from 2025 except what you copied was lost. When a run
   finishes, copy the catalogues to CFS (section 4).
-- Calibration files read by the code: `survey-ccds-decam-dr10-bprp-kd.fits` (DCR; Dustin's CFS), `ringmaps.fits`
+- Calibration files read by the code: `survey-ccds-decam-dr10-bprp-kd.fits` (DCR; Dustin's CFS), `ringmaps-dr10.fits`
   (CFS `ls-motions/rm-corrected-forced-motions/`), `py_files/lateral_model_poly3.json`.
 
 ## 3. The pipeline (per brick)
@@ -176,7 +176,7 @@ overwrites. Only finished bricks are included. Copy `combined/` to CFS with the 
 | Model | How to rebuild | Status |
 |---|---|---|
 | DCR amplitudes `K_b` (`DCR_AMPLITUDES` in `brick_DCR.py`) | `run/dcr-plots.ipynb` | K_i = K_z = 1: negligible by design (Nada, 2026-10-12) |
-| Ring maps `ringmaps.fits` | `get_gaia_data` + `make_ringmaps` in `brick_ringmaps.py` (input star files purged) | Deferred; see PLAN.md |
+| Ring maps `ringmaps-dr10.fits` | `py_files/ringmap_build.py sample validate build` on a compute node (~35 min; reads `combined/gaia-epochs-*`), then `run/ringmap-build.ipynb`; copy the chosen `ringmaps-dr10-b16.fits` to CFS | Rebuilt 2026-10-23 (B1) |
 | Lateral colour `lateral_model_poly3.json` | `run/lateral-model.ipynb`, cell marked [APPROVED] | Current (2026-10-10) |
 
 After changing a model, check it with the end-to-end test: `run/e2e/` (`run_e2e.py`, then `eval_e2e.py`, `faint.py`;
