@@ -30,43 +30,11 @@ CCD_annotated = fits_table('/global/cfs/cdirs/cosmo/work/users/dstn/forced-motio
 BPRP_MAP = dict([((expnum, ccdname), bprp) for expnum,ccdname,bprp in zip(CCD_annotated.expnum, CCD_annotated.ccdname, CCD_annotated.ccdbprp)])
 
 
-def hour_angle(ra, mjd, long=-70.81489):
-    lst = Time(mjd, format="mjd").sidereal_time('mean', longitude=long).to(u.deg)    #local sidereal time
-    return lst.value - ra    # hour angle
-
-
-def parallactic(dec, ha, lat=-30.16606):
-    '''Function will calculate airmass and
-    parallactic angle (in radians) given
-    input of source declination, hour angle,
-    and observatory latitude (in degrees)
-    '''
-    dtor = np.pi / 180.
-    d = dec * dtor
-    h = np.where(ha > 180., (ha - 360.) * dtor, ha * dtor)  # Make negative HA instead of large
-    l = lat * dtor
-    
-    cosz = np.sin(l) * np.sin(d) + np.cos(l) * np.cos(d) * np.cos(h)
-    sinz = np.sqrt(1 - cosz * cosz)  # zenith angle always 0-180
-    
-    airmass = 1. / cosz
-    
-    # Now the parallactic angle
-    zero_angle_mask = sinz <= 0
-    cosp = np.zeros_like(sinz)
-    
-    # Avoid division by zero when sinz is zero
-    cosp[~zero_angle_mask] = (np.sin(l) * np.cos(d[~zero_angle_mask]) - np.cos(l) * np.sin(d[~zero_angle_mask]) * np.cos(h[~zero_angle_mask])) / sinz[~zero_angle_mask]
-    
-    # Clip to handle numerical inaccuracies that might lead to cosp slightly greater than 1
-    cosp = np.clip(cosp, -1, 1)
-    
-    p = np.arccos(cosp) * np.sign(h)
-    
-    # Set parallactic angle to 0 where sinz is zero
-    p[zero_angle_mask] = 0.
-    
-    return airmass, p
+# hour_angle and parallactic live in dcr_geometry.py (importable without loading the CCD table above)
+try:
+    from .dcr_geometry import hour_angle, parallactic
+except ImportError:
+    from dcr_geometry import hour_angle, parallactic
 
 
 class BrickDCR:
