@@ -33,6 +33,7 @@ OBJ_COLS = ['brickid', 'brickname', 'objid', 'type', 'ra', 'dec', 'ra_ivar', 'de
             'new_ra_plx', 'new_dec_plx', 'new_ra_plx_ivar', 'new_dec_plx_ivar',
             'pmra_no_plx', 'pmra_no_plx_ivar', 'pmdec_no_plx', 'pmdec_no_plx_ivar',
             'new_ra_no_plx', 'new_dec_no_plx', 'new_ra_no_plx_ivar', 'new_dec_no_plx_ivar', 'pm_flag', 'ref_mjd']
+QUALITY_COLS = ['pm_quality', 'pm_n_epochs', 'pm_baseline_days']
 EPOCH_COLS = ['brickid', 'brickname', 'objid', 'expnum', 'ccdname', 'filter', 'mjd', 'exptime', 'airmass',
               'ra', 'dec', 'x', 'y', 'dqmask', 'flux', 'flux_ivar', 'fracin',
               'full_fit_dra', 'full_fit_ddec', 'full_fit_dra_ivar', 'full_fit_ddec_ivar', 'full_fit_x', 'full_fit_y',
@@ -56,7 +57,9 @@ def strip(a):
 def read_brick(args):
     deg_dir, brick = args
     try:
-        T = fitsio.read(os.path.join(deg_dir, f"tractor-pm-{brick}.fits"), columns=OBJ_COLS)
+        tf = os.path.join(deg_dir, f"tractor-pm-{brick}.fits")
+        have = set(fitsio.FITS(tf)[1].get_colnames())   # quality columns exist from 2026-10-23 on
+        T = fitsio.read(tf, columns=[c for c in OBJ_COLS + QUALITY_COLS if c in have])
         F = fitsio.read(os.path.join(deg_dir, f"forced-{brick}.fits"), columns=EPOCH_COLS)
     except Exception as e:
         return brick, None, f"{type(e).__name__}: {e}"

@@ -8,6 +8,10 @@ from legacypipe.survey import radec_at_mjd, mjd_to_year
 import sys
 import logging
 import time
+try:
+    from .error_model import total_error, SIGMA_SYS_MAS
+except ImportError:
+    from error_model import total_error, SIGMA_SYS_MAS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,40 +21,28 @@ logger = logging.getLogger(__name__)
 
 DAYSPERYEAR = 365.2425
 
-# A handful of stars in the archived catalogues came back with |PM| up to
-# ~1e16 mas/yr -- numerically "successful" (no LinAlgError) but physically
-# nonsense. Traced this to specific real cases (e.g. brick 0628p105, objid
-# 1499): NOT a matrix-conditioning problem -- cond(A) for these fits is
-# perfectly ordinary, and the reported variance is honestly large, matching
-# the wild point estimate. The actual cause is that *every* object in that
-# brick has a time baseline of ~36 days (vs. ~1200-1800 days for a normal,
-# well-covered brick, checked across several) -- nowhere near enough leverage
-# to constrain a mas/yr-level linear trend, so the least-squares point
-# estimate is essentially noise amplified by a tiny baseline, occasionally
-# landing "significant" by chance. This is a data-completeness issue for that
-# brick (probably imaged in only one short observing run so far), not a
-# per-star fluke, so it needs a baseline requirement, not just an epoch count.
-#   MIN_EPOCHS: below this there's no way to meaningfully constrain a linear
-#     trend (or a trend + parallax) against per-point noise.
-#   MIN_BASELINE_DAYS: below this, even many epochs can't meaningfully
-#     constrain a mas/yr-level trend -- chosen well inside the large gap
-#     observed between pathological (~30-50d) and normal (~1200-1800d)
-#     bricks, but worth revisiting if a future brick falls in between.
-#   MAX_COND_NUMBER: kept as a cheap backstop against true numerical
-#     singularity (duplicate/near-duplicate mjd values), though it did not
-#     catch the case above -- the baseline check is what actually matters.
-# None of these are derived from first principles -- worth sanity-checking
-# against more known-good vs. known-bad stars as more data comes back from
-# Dustin.
-MIN_EPOCHS = 5
-MIN_BASELINE_DAYS = 180
+# Quality is FLAGGED, not cut (Nada, 2026-10-23): every PSF object gets a PM whenever a fit is numerically possible,
+# and pm_quality (bitmask below) says why it may not be trustworthy. Analyses and figures use pm_quality == 0
+# ("clean"); the catalogue keeps everything.
+#   MIN_EPOCHS_FIT / baseline > 0: the minimum for a fit to exist at all (5 parameters from 2 x N equations).
+#   FEW_EPOCHS, SHORT_BASELINE_DAYS: below these, PMs are unreliable (PLAN H1: outlier rates 10% / 26% vs 0.13% for
+#     clean stars; a ~36-day baseline gave |PM| ~ 1e16 mas/yr in the old archive).
+#   MAX_COND_NUMBER: numerically singular design matrix (duplicate epochs) -> fit failed.
+MIN_EPOCHS_FIT = 3
+FEW_EPOCHS = 10
+SHORT_BASELINE_DAYS = 730
 MAX_COND_NUMBER = 1e8
 
-# Some bricks have *every* object fail the epoch/baseline check above (e.g.
-# only one short observing run covers that patch of sky so far) -- the
-# catalogue file for such a brick is technically valid but scientifically
-# empty. Warn loudly rather than let that pass silently as just another
-# "finished" brick; see the per-brick log line in create_brick_catalogue.
+# pm_quality bits
+PMQ_FEW_EPOCHS = 1        # < FEW_EPOCHS measured epochs
+PMQ_SHORT_BASELINE = 2    # measured epochs span < SHORT_BASELINE_DAYS
+PMQ_NO_COLOUR = 4         # no g - i colour (flux_g or flux_i <= 0): no DCR or lateral-colour correction applied
+PMQ_BRIGHT = 8            # Tractor maskbits BRIGHT or MEDIUM (near / is a bright star)
+PMQ_SATURATED = 16        # Tractor maskbits SATUR_G, SATUR_R, SATUR_Z or SATUR_I
+PMQ_FIT_FAILED = 32       # fewer than MIN_EPOCHS_FIT measured epochs, zero baseline, or a singular fit
+MASKBITS_BRIGHT = (1 << 1) | (1 << 11)
+MASKBITS_SATURATED = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14)
+
 BRICK_WARN_INSUFFICIENT_FRACTION = 0.5
 
 
@@ -111,7 +103,7 @@ def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
     ref_mjd = np.sum(dra_ivar * mjd) / np.sum(dra_ivar) # ref_mjd for this dataset is different from Gaia's ref_mjd
                                                         # theoretically, dra_ivar ~= ddec_ivar
     baseline_days = mjd.max() - mjd.min() if N > 0 else 0
-    if N < MIN_EPOCHS or baseline_days < MIN_BASELINE_DAYS:
+    if N < MIN_EPOCHS_FIT or baseline_days <= 0:   # no fit possible; data-quality limits are flagged by the caller
         return None, None, None, None, ref_mjd
 
     # change in ra, dec due to parallax = 1 arcsec, at each epoch (radec_at_mjd needs all-vector arguments)
@@ -186,19 +178,41 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     new_dec_ivar = np.zeros(len(tractor_table[1].data))
     pm_flag = np.zeros(len(tractor_table[1].data))
     ref_mjd = np.zeros(len(tractor_table[1].data))
+    pm_n_epochs = np.zeros(len(tractor_table[1].data), dtype=np.int16)
+    pm_baseline_days = np.zeros(len(tractor_table[1].data), dtype=np.float32)
 
     dra_ivar = forced_table[1].data.full_fit_dra_ivar
     ddec_ivar = forced_table[1].data.full_fit_ddec_ivar
-    dra_error = 1 / np.sqrt(dra_ivar)
-    ddec_error = 1 / np.sqrt(ddec_ivar)
-    dra_error = np.hypot(dra_error, 0.014806002)
-    ddec_error = np.hypot(ddec_error, 0.014806002)
-    # dra_ivar = 1 / dra_error ** 2 
-    # ddec_ivar = 1 / ddec_error ** 2 
+    # Per-epoch total error = statistical (forced photometry) + systematic floor, in quadrature (error_model.py).
+    # Use the total ivars the lateral-colour step wrote into the corrected forced file, so the data product is the
+    # single source of the fit weights; fall back to computing them (older files, or original_data runs).
+    fcols = forced_table[1].columns.names
+    if 'full_fit_dra_ivar_total' in fcols and 'full_fit_ddec_ivar_total' in fcols:
+        tot_ra = np.asarray(forced_table[1].data.full_fit_dra_ivar_total, dtype=float)
+        tot_dec = np.asarray(forced_table[1].data.full_fit_ddec_ivar_total, dtype=float)
+        with np.errstate(divide='ignore'):
+            dra_error = np.where(tot_ra > 0, 1 / np.sqrt(np.where(tot_ra > 0, tot_ra, 1)), np.inf)
+            ddec_error = np.where(tot_dec > 0, 1 / np.sqrt(np.where(tot_dec > 0, tot_dec, 1)), np.inf)
+        sigma_sys = float(forced_table[1].header.get('SIGSYS', SIGMA_SYS_MAS))
+    else:
+        dra_error = total_error(dra_ivar)
+        ddec_error = total_error(ddec_ivar)
+        sigma_sys = SIGMA_SYS_MAS
 
     psf_mask = tractor_table[1].data.type == 'PSF'
     J = np.flatnonzero(psf_mask)
     pm_flag[~psf_mask] = -1  # not a PSF source, PM was never attempted
+
+    # object-level quality flags from the Tractor catalogue (see the PMQ_* bits); epoch-based bits are set per object
+    tdat = tractor_table[1].data
+    pm_quality = np.zeros(len(tdat), dtype=np.int16)
+    with np.errstate(all='ignore'):
+        has_colour = (np.asarray(tdat.flux_g) > 0) & (np.asarray(tdat.flux_i) > 0)
+    maskbits = np.asarray(tdat.maskbits).astype(np.int64)
+    pm_quality[~has_colour] |= PMQ_NO_COLOUR
+    pm_quality[(maskbits & MASKBITS_BRIGHT) != 0] |= PMQ_BRIGHT
+    pm_quality[(maskbits & MASKBITS_SATURATED) != 0] |= PMQ_SATURATED
+    pm_quality[~psf_mask] = 0   # no PM attempted: no quality to report
 
     # Plain numpy copies of the columns used per object (FITS_rec column access is slow), and each object's
     # measurement rows found once (a stable sort keeps them in file order) instead of a full-table mask per object.
@@ -208,7 +222,12 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     f_dra = np.asarray(F.full_fit_dra if original_data else F.lm_full_fit_dra)
     f_ddec = np.asarray(F.full_fit_ddec if original_data else F.lm_full_fit_ddec)
     f_raw_dra = np.asarray(F.full_fit_dra)
-    order = np.argsort(f_objid, kind='stable')
+    # Only epochs the forced photometry actually measured: an error (ivar > 0) AND an offset. ~5% of epochs have
+    # ivar > 0 but full_fit_dra == 0 (no offset measured); the correction steps already skip them, and after the
+    # corrections they would carry fake offsets. Epochs with ivar == 0 carried zero weight but still counted towards
+    # the epoch / baseline counts. Both are excluded, so FEW_EPOCHS / SHORT_BASELINE_DAYS count measured epochs only.
+    measured = (np.asarray(F.full_fit_dra_ivar) > 0) & (np.asarray(F.full_fit_ddec_ivar) > 0) & (f_raw_dra != 0)
+    order = np.flatnonzero(measured)[np.argsort(f_objid[measured], kind='stable')]
     uniq, starts = np.unique(f_objid[order], return_index=True)
     rows_of = dict(zip(uniq.tolist(), np.split(order, starts[1:])))
     no_rows = np.zeros(0, dtype=int)
@@ -216,10 +235,19 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
          ('ra', 'dec', 'ref_epoch', 'pmra', 'pmdec', 'parallax', 'pmra_ivar', 'pmdec_ivar', 'parallax_ivar')}
 
     fails = []
-    n_insufficient_data = 0  # objects where calculate_pm rejected both fits for having too few epochs/too short a baseline (see MIN_EPOCHS/MIN_BASELINE_DAYS) -- distinct from a per-object numerical failure (an exception)
+    n_insufficient_data = 0  # objects flagged FEW_EPOCHS or SHORT_BASELINE (unreliable time coverage)
 
     for i, objid in zip(J, tractor_table[1].data.objid[J]):
         rows = rows_of.get(int(objid), no_rows)
+        n_ep = len(rows)
+        base = float(f_mjd[rows].max() - f_mjd[rows].min()) if n_ep else 0.
+        pm_n_epochs[i], pm_baseline_days[i] = n_ep, base
+        if n_ep < FEW_EPOCHS:
+            pm_quality[i] |= PMQ_FEW_EPOCHS
+        if base < SHORT_BASELINE_DAYS:
+            pm_quality[i] |= PMQ_SHORT_BASELINE
+        if pm_quality[i] & (PMQ_FEW_EPOCHS | PMQ_SHORT_BASELINE):
+            n_insufficient_data += 1
         try:
             X_plx, var_plx, X, var, rmjd = calculate_pm(
                 f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][objid], T['dec'][objid]
@@ -228,10 +256,8 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             logger.warning(f"Error calculating PM for objid={objid}: {e}")
             fails.append(objid)
             pm_flag[i] = 0
+            pm_quality[i] |= PMQ_FIT_FAILED
             continue
-
-        if X_plx is None and X is None:
-            n_insufficient_data += 1
 
         success = True
 
@@ -274,13 +300,15 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
 
         ref_mjd[i] = rmjd
         pm_flag[i] = 1 if success else 0  # only mark success when both fits (with & without parallax) succeeded
+        if not success:
+            pm_quality[i] |= PMQ_FIT_FAILED
 
     if len(J) > 0:
         frac_insufficient = n_insufficient_data / len(J)
         if frac_insufficient >= BRICK_WARN_INSUFFICIENT_FRACTION:
             logger.warning(
                 f"{filename}: {n_insufficient_data}/{len(J)} PSF objects ({100 * frac_insufficient:.0f}%) "
-                f"had no usable PM fit (too few epochs or too short a time baseline) -- this brick likely "
+                f"are flagged for too few epochs or too short a time baseline -- this brick likely "
                 f"has inadequate temporal coverage for proper motion measurement, not just a handful of bad stars"
             )
 
@@ -304,10 +332,15 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     pm_table[1].columns.add_col(fits.Column(name="new_dec_no_plx_ivar", array=new_dec_ivar, format='E', unit='deg^(-2)'))
     pm_table[1].columns.add_col(fits.Column(name="pm_flag", array=pm_flag, format='E'))
     pm_table[1].columns.add_col(fits.Column(name="ref_mjd", array=ref_mjd, format='D'))
+    pm_table[1].columns.add_col(fits.Column(name="pm_quality", array=pm_quality, format='I'))
+    pm_table[1].columns.add_col(fits.Column(name="pm_n_epochs", array=pm_n_epochs, format='I'))
+    pm_table[1].columns.add_col(fits.Column(name="pm_baseline_days", array=pm_baseline_days, format='E', unit='d'))
 
     print("done! now writing to file...")
 
     output_name = f"tractor-{'original-' if original_data else ''}pm-{filename[-13:]}"
+    # record the error model that produced these PMs
+    pm_table[1].header['SIGSYS'] = (sigma_sys, 'systematic per-epoch error added in quadrature (mas)')
     output_path = f"{new_dir}{output_name}"
     tmp_path = output_path + ".tmp"
     try:

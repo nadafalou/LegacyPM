@@ -152,7 +152,37 @@ def _no_clash(T):
     return np.ones(len(T), bool) if c is None else ~np.asarray(c, bool)
 
 
-def gaia_star_mask(T, model='no_plx'):
+# pm_quality bits, as in create_brick_catalogue (PMQ_*)
+PMQ = {'FEW_EPOCHS': 1, 'SHORT_BASELINE': 2, 'NO_COLOUR': 4, 'BRIGHT': 8, 'SATURATED': 16, 'FIT_FAILED': 32}
+
+
+def quality_bits(T):
+    """pm_quality of each row: the catalogue column if present (catalogues from 2026-10-23 on), otherwise rebuilt
+    from the same ingredients (combined files: n_epochs, baseline_days; Tractor flux_g, flux_i, maskbits)."""
+    cols = T.get_columns()
+    if 'pm_quality' in cols:
+        return np.asarray(T.pm_quality).astype(int)
+    q = np.zeros(len(T), int)
+    if 'n_epochs' in cols:
+        q |= np.where(T.n_epochs < 10, PMQ['FEW_EPOCHS'], 0)
+    if 'baseline_days' in cols:
+        q |= np.where(T.baseline_days < 730, PMQ['SHORT_BASELINE'], 0)
+    if 'flux_g' in cols and 'flux_i' in cols:
+        q |= np.where((T.flux_g > 0) & (T.flux_i > 0), 0, PMQ['NO_COLOUR'])
+    if 'maskbits' in cols:
+        mb = np.asarray(T.maskbits).astype(np.int64)
+        q |= np.where(mb & ((1 << 1) | (1 << 11)), PMQ['BRIGHT'], 0)
+        q |= np.where(mb & ((1 << 2) | (1 << 3) | (1 << 4) | (1 << 14)), PMQ['SATURATED'], 0)
+    q |= np.where(T.pm_flag == 1, 0, PMQ['FIT_FAILED'])
+    return q
+
+
+def clean_mask(T):
+    """Rows with no quality flag set: what all analysis figures use (the catalogue keeps everything)."""
+    return quality_bits(T) == 0
+
+
+def gaia_star_mask(T, model='no_plx', clean=True):
     """Boolean mask: Gaia-reference PSF stars with a genuinely successful,
     numerically-sane fit.
 
@@ -173,6 +203,7 @@ def gaia_star_mask(T, model='no_plx'):
     pmra = getattr(T, pmra_col)
     pmdec = getattr(T, pmdec_col)
     return (
+        (clean_mask(T) if clean else True) &
         _no_clash(T) &
         (T.ref_cat == 'GE') &
         # Gaia 2-parameter solutions have no PM/parallax (stored as 0, ivar 0): nothing to validate against

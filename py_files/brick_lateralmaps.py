@@ -7,6 +7,10 @@ from scipy.interpolate import RectBivariateSpline
 import sys
 import logging
 import time
+try:
+    from .error_model import total_ivar, SIGMA_SYS_MAS
+except ImportError:
+    from error_model import total_ivar, SIGMA_SYS_MAS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -195,6 +199,13 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
         corr_table[1].data["lm_full_fit_y"][J] = ypos
         corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
         corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
+
+    # total per-epoch inverse variance of the corrected positions: statistical + systematic floor (error_model.py);
+    # this is what the PM fit uses
+    for ax in ('dra', 'ddec'):
+        corr_table[1].columns.add_col(fits.Column(name=f"full_fit_{ax}_ivar_total", format='E', unit='arcsec^(-2)',
+                                                  array=total_ivar(corr_table[1].data[f"full_fit_{ax}_ivar"])))
+    corr_table[1].header['SIGSYS'] = (SIGMA_SYS_MAS, 'systematic error in full_fit_*_ivar_total (mas)')
 
     output_path = f"{ corr_dir }{ filename }"
     tmp_path = output_path + ".tmp"
