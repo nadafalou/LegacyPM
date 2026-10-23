@@ -15,6 +15,7 @@ white, so multi-series plots must keep a legend and distinct marker shapes (MARK
 Figures are made at their printed size (MNRAS column / page width) so the fonts below are the fonts in the paper:
 don't make a figure 2x too big and let LaTeX shrink it, which is what made the old labels unreadable.
 """
+import logging
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
 
@@ -38,6 +39,8 @@ DENSITY = 'Greys'
 
 def apply():
     """Set matplotlib defaults for paper figures (fonts sized for print at COLUMN / PAGE width)."""
+    # the pipeline modules turn on INFO logging, which makes fontTools print a line per PDF font subset
+    logging.getLogger('fontTools').setLevel(logging.WARNING)
     mpl.rcParams.update({
         'font.size': 8, 'axes.titlesize': 8, 'axes.labelsize': 8, 'xtick.labelsize': 7, 'ytick.labelsize': 7,
         'legend.fontsize': 7, 'figure.titlesize': 9,
