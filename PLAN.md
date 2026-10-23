@@ -44,17 +44,52 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       quadrature -> B1. And after DCR the along-parallactic scatter still exceeds the across scatter (g 15.9 vs 13.0,
       r 13.6 vs 11.9, i 13.6 vs 12.3): an extra ~6-9 mas along the parallactic direction not removed by a colour x
       airmass model (turbulence/refraction?) -- likely the Dec pull excess (H4).
-- [ ] H3. Error budget table for the paper (James): RMS scatter of Gaia-star epochs before/after each correction
-      (DCR, CCD maps, lateral) per band, along-parallactic and total, over the full catalogue; also the floor and the
-      bright-star excess (pull width > 2 at G < 15.5).
-- [ ] H4. RA vs Dec performance (F8, F9: Dec worse) -- expected to clarify with H1; pull width vs Dec suggests an
-      airmass / parallactic-direction effect (see FINDINGS).
-- [ ] H5. Check the relative-colour definition (James asked; also a real anomaly): c_rel of the calibration stars peaks
-      at ~-0.8, not 0, so the reference colour (-0.56 + 1.34 BP-RP of the CCD's reference stars) is ~0.5-0.8 mag
-      redder than our Gaia stars; the DCR constant terms point the same way. Is ccdbprp the mean colour of all
-      astrometric reference stars (incl. fainter, redder ones)? Ask Dustin for the definition + citation.
-- [ ] H6. Colour-magnitude diagram of the DCR calibration stars (James): do the two colour modes correspond to stellar
-      populations (disk vs halo, Pop I vs Pop II, turnoff vs K/M dwarfs) or depend on magnitude? Exploratory figure.
+- [x] H3 (2026-10-23): run/h3-error-budget.ipynb -> writeup/tables/error_budget.tex (\input-able, label tab:error_budget)
+      and writeup/plots/error_floor_vs_mag.pdf. 25M epochs from a random 5% of bricks in all 64 slices (cache
+      combined/stage_sample_000-063_0.05.npz), clean Gaia stars, sigma < 10 mas. Per-axis scatter (mas), none / DCR /
+      CCD maps / lateral: g 21.4 / 15.1 / 17.8 / 17.1; r 14.1 / 13.2 / 12.5 / 12.4; i 12.8 / 12.7 / 11.6 / 11.6;
+      z 11.3 / 11.3 / 10.7 / 10.7. Removed (quadrature): DCR g 15.2, r 5.0, i 1.7; CCD maps r 4.4, i 5.1, z 3.5 but
+      g -9.3 (adds; B1); lateral g 4.7, r 1.2. DCR signal g 18.7 -> 4.2 mas.
+      Floor vs G (clean): per-axis robust scatter ~11.5 mas at G 16-18 rising to ~28 at G 21; implied systematic
+      (scatter^2 - stat^2) 15 mas at G 16-18, 17-22 at G 19-20, 25-35 at G > 20.5 -> the statistical errors of faint
+      stars are also underestimated. Flagged stars: up to 33 mas at G 14 (saturation).
+      NOTE: per-epoch ROBUST scatter (~12 mas) is below the adopted 20 mas, yet sigma_sys = 20 matches the PM-level
+      scatter (F13) -> epoch errors have heavy tails (a least-squares fit feels the RMS, not the MAD). Consider a
+      magnitude-dependent floor and/or epoch rejection (D4) when finalising the error model.
+- [x] H4 (2026-10-23): run/h4-ra-dec.ipynb -> run/plots/h4_geometry.pdf, h4_along_across_vs_airmass.pdf,
+      h4_ra_dec_vs_dec.pdf (slice 000, clean Gaia stars, sigma < 10 mas, fully corrected). EXPLAINED: per-epoch scatter
+      is larger ALONG the parallactic direction than across it in every band (excess ~6-10 mas in g, ~5-6 in r/i, 2-5 in
+      z, rising to ~10 at tan z > 1), and the parallactic direction is mostly north-south (median |cos PA| 0.79), so the
+      excess lands in Dec: Dec/RA per-epoch scatter ratio 1.20 = Dec/RA PM pull ratio 1.30/1.08 = 1.20.
+      The excess is not pure DCR (it is present near the zenith in g/r and doesn't scale as c_rel tan z); candidates:
+      image elongation from refraction across the bandpass (centroid noise along the elongation), residual DCR from
+      colour/SED errors. Options: (a) re-measure after the new DCR model (A2) and rebuilt g maps (B1); (b) an
+      anisotropic error model: extra variance along the parallactic direction per band, a_b + k_b tan z (needs the
+      parallactic angle per epoch in the PM step -- available from ra, dec, mjd, exptime as in brick_DCR).
+- [x] H5 (2026-10-23): reference colour checked (slice 000).
+      * Definition (legacypipe legacyzpts/legacy_zeropoints.py l.1500-1506, 1632): ccdbprp = MEDIAN Gaia BP-RP of the
+        astrometric calibration stars on that CCD in that exposure; brick_DCR converts it with -0.56 + 1.34 (BP-RP).
+      * Conversion verified: our 118k Gaia stars (G 16-20, unsaturated) give g-i = -0.57 + 1.36 (BP-RP); within
+        +-0.08 mag per bin up to BP-RP 2.5; too red by 0.15-0.27 mag for BP-RP > 2.5 (M dwarfs).
+      * ccdbprp matches the median BP-RP of our Gaia stars per CCD-exposure (58,518 of them): +0.01, scatter 0.22.
+      * CORRECTION: there is no -0.8 mag offset. Median c_rel (sigma < 10 mas epochs) is -0.27; the -0.8 was the blue
+        PEAK of the bimodal colour distribution, misread as an offset.
+      * Hypothesis for the DCR constant terms in r/i (~-2 mas / tan z): the astrometric solution zeroes the calibrators'
+        MEAN offset (~mean colour), but the reference is their MEDIAN colour; with a red tail the mean is redder
+        (r zero point ~0.27 mag redder than the median). Not seen in g. Absorbed by a constant term in the new model.
+      * Still open: source/citation of -0.56 + 1.34 (not in legacypipe) -> Dustin; the paper can also cite our fit.
+- [x] H6 (2026-10-23): run/h6-populations.ipynb -> run/plots/h6_cmd_colour_modes.pdf, h6_reduced_pm.pdf,
+      h6_dcr_by_population.pdf (189k clean Gaia stars, slices 000/020/040/060, 30% of bricks).
+      * The two colour modes are the classic two field populations at high latitude: a blue peak at BP-RP ~ 0.8-1.0
+        (main-sequence turnoff stars, thick disk + halo) and a red peak at BP-RP ~ 2-2.5 (K/M dwarfs, thin disk).
+        Bright stars (G < 17.5) are mostly turnoff stars; at G 19-21 the M dwarfs dominate and the blue peak moves
+        bluer (more halo). At higher |b| the blue peak is bluer too. (Our sample is almost all |b| > 30.)
+      * Clean calibration stars stop at G ~ 16 (brighter ones are flagged BRIGHT/SATURATED).
+      * DCR at fixed colour is the same for kinematically hot (halo-like, high reduced PM) and cold stars in r, i, z;
+        in g the hot half is lower by ~1-2.5 mas per unit tan z at -0.7 < c_rel < 0.5 (small: a few % of the DCR
+        signal; consistent with metal-poor/alpha-enhanced SEDs). Both groups follow the same kinked curve -> the
+        two-line DCR shape is a colour effect, not a mix of populations. A colour-only DCR model is adequate.
+      * Small artefact: a column at BP-RP = 0 (missing Gaia BP/RP stored as 0) -- exclude in any colour-based use.
 
 ### A. DCR model (blocks B-E; decision with Dustin)
 - [x] A1 (2026-10-22): run/dcr-polyfit.ipynb (py_files/dcr_fit.py; geometry in py_files/dcr_geometry.py so analysis
@@ -79,10 +114,42 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       i 0.42, z 0.43 mas -- best or joint-best in every band (beats tan z x quadratic in r/i; ties two-lines-in-x and
       x order 5 in g). Breaks / slopes (blue, red; mas per mag per tan z): g 0.10 / 39.5, 24.6; r 0.75 / 8.0, 13.2;
       i 0.50 / 3.5, 6.3; z 0.40 / 1.2, 1.6. NEW PROPOSAL: DCR = tan z x broken line in c_rel, c_rel clamped ~-1.5.
-- [ ] A2. Decide the model with Dustin (send run/plots/dcr_tanz_polyfit.pdf, dcr_twolines.pdf, dcr_two_modes.pdf):
+- [x] A2 (2026-10-23, Nada: James's two lines). Implemented: run/dcr-polyfit.ipynb last cell fits all 000-063 cells
+      -> py_files/dcr_model_twoline.json; brick_DCR.dcr_shift_mas applies it (c_rel clipped to [-1.5, 2.5]). Final
+      breaks / a / slopes (blue, red): g 0.05 / 3.5 / 39.7, 25.1; r 0.70 / 3.3 / 7.9, 13.1; i 0.50 / -0.1 / 3.4, 6.3;
+      z -0.10 / -0.8 / 0.9, 1.5 mas per tan z. i and z now get a real correction (old K = 1).
+      Was: Decide the model with Dustin (send run/plots/dcr_tanz_polyfit.pdf, dcr_twolines.pdf, dcr_two_modes.pdf):
       current proposal tan z x broken line in c_rel (James's two modes), clamped at c_rel ~ -1.5. Then update brick_DCR
       (correction = tan z x f_b(c_rel) instead of K_b c_rel tan z) and dcr_fit for the coefficients.
-- [ ] A3. Remake F3 for the paper with the chosen model (data + fit only; done for the linear fit).
+- [x] A3 (code 2026-10-23; rerun dcr-plots after the rerun). Remake F3 for the paper with the chosen model (data + fit only; done for the linear fit).
+- [x] A4 (2026-10-23) Pulls vs magnitude (run/pull-vs-mag.ipynb, py_files/pm_pulls.py; slice 000, 25% of bricks, 23M
+      epochs of clean objects, residuals from each star's straight-line fit). **BUG FOUND in the inputs:
+      full_fit_ddec_ivar is too large by 1/cos^2(Dec)** (sigma_Dec/sigma_RA = cos Dec exactly: 0.71 at -45, 0.43 at -65,
+      0.13 at -82; faint-star Dec pulls 1.36 / 2.4 / ~7 there, RA fine). With sigma_Dec divided by cos Dec, faint pulls
+      are 0.90-1.03 in both axes at every Dec, so the statistical errors are right (k = 1; Nada's constant-sigma_sys
+      argument holds). Core best-fit sigma_sys: g 16, r 12, i 12, z 10 mas (robust; 20 also covers the tails).
+      Left: Dec pulls ~10-20% above RA for bright stars (the H4 parallactic excess), and |pull| > 5 rising to ~5% of
+      epochs at mag 25-26. Consequences: pmdec / parallax ivars too large south of ~-30 (likely much of the F8 pmdec pull
+      1.40 vs pmra 1.10 and of H4's PM pull ratio); BAD_EPOCHS over-fires in Dec there. TODO: confirm with Dustin, then
+      fix (ddec ivar x cos^2 Dec) in error_model / brick_lateralmaps before the rerun.
+- [x] A5 (2026-10-23, Nada: adopt per-band sigma_sys) error_model.SIGMA_SYS_MAS = g 16, r 12, i 12, z 10 (A4 fit).
+      Headers SIGSYS_G..Z. pm-error-model / h3 / pull-vs-mag notebooks updated.
+- [x] A6 (2026-10-23, Nada: fallback colours if accurate) colours.py + run/colour-fallback.ipynb: g-i from g-z,
+      0.025 mag scatter, |bias| < 0.025 for 0 < g-i < 3.2 (g-r, r-z, BP-RP rejected: 0.12-0.17 mag, biases to 0.27).
+      14% of PSF objects lack g-i (80% of them: no i coverage); g-z covers 81% of those. New column pm_colour_source.
+      Also found: brick_DCR skipped DCR entirely for bricks without i band -- removed (no-i test brick 0010m295: DCR
+      now on 86% of epochs, NO_COLOUR 100% -> 14%).
+- [x] A7 (2026-10-23, Nada: adopt >= 10%) BAD_EPOCHS rule: 1-7% of all epochs are > 5 sigma, spread evenly over exposures (no bad exposures), so "any
+      bad epoch" mostly counts epochs (40% flagged at 23 epochs, 80% at 55). Slice 000 clean Gaia stars: any >= 1 flags
+      37% and catches 95% of |ours - Gaia| > 30 mas/yr; fraction of bad epochs >= 10% flags 4.7% and catches 89%.
+      Proposed: flag when >= 10% of epochs are bad. Nada to decide.
+- [x] A8 (2026-10-23) Dec-ivar bug handling. Dustin: fixed in legacypipe 7aece157 (2026-09-16; only ivar, positions
+      fine); no marker in old files; he is adding header card DDIVFIX = T and patching his pscratch files. Survey of 1627
+      input bricks of 000-063: CFS files (2024-12 .. 2025-01) all affected, scratch files (>= 2026-09-17) all fixed.
+      A per-brick data test can't be the rule (real PSF elongation along Dec raises sigma_Dec/sigma_RA by 5-8% in the
+      north, comparable to 1 - cos Dec at |Dec| < 35). Rule: DDIVFIX if present, else input date (INPDATE header,
+      stamped by brick_DCR / prep_archive_rerun), else data. Tested on 0600m045 (scratch, not corrected) and 0010m295
+      (CFS, corrected). Pulls on slice 000 with it: faint widths 0.90-1.02 in RA and Dec at all Dec.
 ### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
 - [ ] B1. Recompute DCR on the combined Gaia-star epochs with the new model; build ringmaps from ALL 000-063 Gaia
       stars (sigma < 10 mas), replacing the Apr 2024 maps (~60 stars/bin then; far more now). Expected to fix the
@@ -94,10 +161,13 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
 - [ ] C2. Investigate the colour-independent left/right dipole left in F5 (not lateral colour; CCD maps / WCS?).
 ### D. Pipeline fixes to include in the rerun
 - [ ] D1. objid clashes: key brick_DCR's colour lookup and create_brick_catalogue's row grouping on (brickid, objid).
-- [ ] D2. Archive bricks (548): raw full_fit_* columns survive, so prep_archive_rerun must also drop dcr_* columns and
+- [x] D2 (2026-10-23). prep_archive_rerun drops dcr_*/dp1/colour_airmass too; run_bricks redoes DCR on archive
+      bricks. Was: Archive bricks (548): raw full_fit_* columns survive, so prep_archive_rerun must also drop dcr_* columns and
       the run must redo DCR (currently it starts from the archived DCR columns = old amplitudes).
 - [x] D3. Done with D6.
-- [ ] D4. From H1: iterative 5-sigma epoch rejection in the PM fit (outliers 4.2 -> 3.3% on slice 000).
+- [x] D4 (2026-10-23, Nada: flag, don't reject). Epochs > 5 sigma from the fit (5-param; 4-param if it failed) are
+      kept; pm_n_bad_epochs counts them and pm_quality bit 64 BAD_EPOCHS is set, so clean_mask drops them from plots.
+      (H1: rejecting them instead would take outliers 4.2 -> 3.3% on slice 000.)
 - [x] D6 (2026-10-23, Nada: don't use what the inputs don't trust): create_brick_catalogue now fits only measured
       epochs (ivar > 0 and full_fit_dra != 0); also covers D3 (epoch/baseline cuts count measured epochs). Tested on
       0001m002: only stars with unmeasured epochs change (median 0.03-0.05 sigma); Gaia RA scatter 1.81 -> 2.12

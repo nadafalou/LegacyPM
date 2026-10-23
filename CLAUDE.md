@@ -9,8 +9,12 @@ Input from Dustin's forced-photometry runs: `/pscratch/sd/d/dstn/forced-motions-
 (`forced-<brick>.fits` = per-epoch "full fit" positions `full_fit_dra/ddec`; `tractor-forced-<brick>.fits` = Tractor catalogue).
 Corrections are applied **in sequence**; each map is built on the previous stage's output:
 
-1. `py_files/brick_DCR.py` -> `dcr_full_fit_*` columns. Δ = K_b · c_rel · sqrt(X²−1) along parallactic direction.
-   K_b in mas/mag (`DCR_AMPLITUDES`: g 29.82, r 7.91, i 1, z 1). c_rel = (g−i) − ref colour of the exposure/CCD,
+1. `py_files/brick_DCR.py` -> `dcr_full_fit_*` columns. Since 2026-10-23: Δ (mas, along the parallactic direction) =
+   tan z · (a + b_blue·min(c−c_b,0) + b_red·max(c−c_b,0)), c = c_rel clipped to [−1.5, 2.5], per band (James's "two
+   lines"; coefficients `py_files/dcr_model_twoline.json`, fit by `run/dcr-polyfit.ipynb`; the old linear
+   K_b = g 29.82, r 7.91, i 1, z 1 is gone). Also applied to bricks without i band (skipped before 2026-10-23).
+   g−i from `py_files/colours.py`: measured, else predicted from g−z (cubic, `colour_fallback.json`, fit by
+   `run/colour-fallback.ipynb`; 0.025 mag; only for 0 < g−i < 3.2). c_rel = (g−i) − ref colour of the exposure/CCD,
    ref colour = −0.56 + 1.34·(Gaia BP−RP) from `survey-ccds-decam-dr10-bprp-kd.fits`.
 2. `py_files/brick_ringmaps.py` -> `rm_full_fit_*`. Per CCD × filter maps of median (Gaia − measured) offset,
    16-px bins, bilinear spline. Maps: `ringmaps.fits`.
@@ -21,9 +25,15 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    Steps 2-3 build maps from σ < 10 mas measurements but apply them to every measurement with a valid fit.
 4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `lm_full_fit_*`, PSF sources only,
    measured epochs only (ivar > 0 and full_fit_dra != 0); 4-param (PM) and 5-param (PM+parallax) fits. Per-epoch
-   error = sqrt(stat^2 + sigma_sys^2), sigma_sys = 20 mas (`py_files/error_model.py`; the lateral step writes
-   `full_fit_*_ivar_total` + header SIGSYS, which the PM fit reads; catalogues record SIGSYS in their header). Quality is FLAGGED, not cut: PMs for every PSF object with >= 3 measured epochs;
-   `pm_quality` bitmask (FEW_EPOCHS < 10, SHORT_BASELINE < 730 d, NO_COLOUR, BRIGHT, SATURATED, FIT_FAILED).
+   error = sqrt(stat^2 + sigma_sys[band]^2), sigma_sys g 16, r 12, i 12, z 10 mas (`py_files/error_model.py`, from
+   `run/pull-vs-mag.ipynb`; the lateral step writes `full_fit_*_ivar_total` + headers SIGSYS_G..Z, which the PM fit
+   reads and copies). INPUT BUG: forced photometry before legacypipe 7aece157 (2026-09-16) has `full_fit_ddec_ivar`
+   too large by 1/cos^2(Dec) (all CFS inputs, archive bricks; scratch 000-063 inputs are fixed). The lateral step
+   multiplies it by cos^2(Dec) when the input is affected, decided by Dustin's header card DDIVFIX if present, else by
+   the input file date (INPDATE, stamped by brick_DCR), else by the data (`error_model.corrected_ddec_ivar`); headers
+   record DECFIX / DECBASIS / DECRATIO. Quality is FLAGGED, not cut: PMs for every PSF object with >= 3 measured epochs;
+   `pm_quality` bitmask (FEW_EPOCHS < 10, SHORT_BASELINE < 730 d, NO_COLOUR, BRIGHT, SATURATED, FIT_FAILED,
+   BAD_EPOCHS 64 = >= 10% of epochs > 5σ from the fit; bad epochs are kept in the fit, counted in `pm_n_bad_epochs`).
    Figures/analysis use clean objects only (`pm_analysis.clean_mask`, pm_quality == 0); catalogues keep everything.
    Gaia stars (ref_epoch > 0) are measured relative to their Gaia motion by the forced photometry; the Gaia PM/parallax
    is added back, so all output PMs, parallaxes and positions (float64) are absolute. Catalogues made before
