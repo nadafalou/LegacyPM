@@ -48,7 +48,9 @@ pscratch clone; consider deleting the home one to avoid confusion.
 - **Coverage of RA 000-063** (2026-10-12): 84,358 DR10-south bricks; inputs exist for **81,491**. Missing: RA 058-059
   (only 12 of 2,322 bricks exist) and 557 scattered bricks in 000-057 (196 of them in 057). These are listed in
   `missing_bricks.txt` -- ask Dustin. Everything else (000-057 minus gaps, 060-063) can run now.
-- **Output** (default): `/pscratch/sd/n/nelfalou/legacypm-catalogue/<RRR>/` -- `forced-<brick>.fits` (raw + `dcr_`, `rm_`,
+- **Output** (default since 2026-10-23, run v2): `/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/<RRR>/` (v1, the
+  Oct 2026 run with the old corrections, stays in `/pscratch/sd/n/nelfalou/legacypm-catalogue/` until v2 is checked; the
+  analysis code's `pm_analysis.COMBINED_DIR` still points at v1's `combined/` until v2 is combined) -- `forced-<brick>.fits` (raw + `dcr_`, `rm_`,
   `lm_` columns), `tractor-pm-<brick>.fits` (the catalogue), `logs/<brick>.log`, `failed.txt`.
 - **pscratch is purged** (files untouched for ~8 weeks). Everything from 2025 except what you copied was lost. When a run
   finishes, copy the catalogues to CFS (section 4).
@@ -96,8 +98,8 @@ sbatch run_bricks.sbatch 000-015                                        # extra 
 squeue --me
 tail -f /pscratch/sd/n/nelfalou/legacypm-catalogue/slurm-logs/legacypm-<jobid>.out
 seff <jobid>                                                            # after it ends: time + memory used
-cat /pscratch/sd/n/nelfalou/legacypm-catalogue/0*/failed.txt
-less /pscratch/sd/n/nelfalou/legacypm-catalogue/<RRR>/logs/<brick>.log
+cat /pscratch/sd/n/nelfalou/legacypm-catalogue-v2/0*/failed.txt
+less /pscratch/sd/n/nelfalou/legacypm-catalogue-v2/<RRR>/logs/<brick>.log
 shifter --image=docker:nadafalou/legacypm:5 python run_bricks.py 000-063 --dry-run   # "N done, 0 to run" = finished
 ```
 
@@ -113,7 +115,7 @@ shifter --image=docker:nadafalou/legacypm:5 python run_bricks.py 000-063 --dry-r
   directory only (testing), `--out-root`, `--dry-run`.
 - **Output size:** ~60 MB per brick (mostly the corrected `forced-*` file; `tractor-pm-*` ~16 MB) -> ~5 TB for 000-063 on
   pscratch (quota 20 TB). Copy at least the catalogues to CFS when a block finishes:
-  `rsync -a --include='*/' --include='tractor-pm-*' --exclude='*' /pscratch/sd/n/nelfalou/legacypm-catalogue/ /global/cfs/cdirs/cosmo/work/users/nelfalou/legacypm-catalogue/`
+  `rsync -a --include='*/' --include='tractor-pm-*' --exclude='*' /pscratch/sd/n/nelfalou/legacypm-catalogue-v2/ /global/cfs/cdirs/cosmo/work/users/nelfalou/legacypm-catalogue-v2/`
   (~1.3 TB). The `forced-*` files (~3.5 TB) are needed for per-epoch error analysis; CFS `cosmo` is 88% full, so ask
   Dustin before copying those too. Until then they live on pscratch and are purged if untouched for ~8 weeks.
 
@@ -157,7 +159,7 @@ sbatch -A desi -q regular -C cpu -N 1 -t 04:00:00 --image=docker:nadafalou/legac
   --wrap "cd $PWD && shifter python combine_catalogue.py 000-063 --workers 128"
 ```
 (or `~/anaconda3/envs/desi-pm/bin/python combine_catalogue.py 058` for one slice on a login node). It writes, per slice,
-into `/pscratch/sd/n/nelfalou/legacypm-catalogue/combined/`: `pm-<deg>.fits` (PSF objects with PMs, plus `n_epochs` and
+into `/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/combined/`: `pm-<deg>.fits` (PSF objects with PMs, plus `n_epochs` and
 `baseline_days` from valid epochs), `gaia-objects-<deg>.fits`, `gaia-epochs-<deg>.fits` (per-epoch rows of Gaia stars,
 raw + corrected positions) and `bricks-<deg>.fits` (one row per brick). Rerun it whenever more bricks finish; it
 overwrites. Only finished bricks are included. Copy `combined/` to CFS with the catalogues.

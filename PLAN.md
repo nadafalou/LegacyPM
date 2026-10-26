@@ -151,6 +151,26 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       stamped by brick_DCR / prep_archive_rerun), else data. Tested on 0600m045 (scratch, not corrected) and 0010m295
       (CFS, corrected). 2026-10-23: Dustin patched all his pscratch inputs with DDIVFIX = T (boolean, in the PRIMARY
       header); brick_DCR copies it to the table header; verified on 0600m045 (DECBASIS = DDIVFIX). Pulls on slice 000 with it: faint widths 0.90-1.02 in RA and Dec at all Dec.
+- [x] A9 (2026-10-26) Error model v3 (Nada: refit sigma_sys + term along refraction): run/error-model-fit.ipynb, per epoch
+      C = C_stat + (s_b + m_b tan z)^2 I + (a_b + k_b tan z)^2 p p^T; PM fit whitens each epoch's RA/Dec pair
+      (create_brick_catalogue._wls); run_bricks.py --redo-errors (errors + zero points + PM only, restartable via
+      ERRMODEL/ZPTABLE headers). INCIDENT: first redo test wrote headers listing a column the data lacked for 1455
+      slice-000 forced files; repaired (legacypm-catalogue-v2/repair/repair_header.py, positions verified bit-for-bit);
+      fixed (tables rebuilt via from_columns, rewrite read back before replace).
+      Slice-000 test showed PM pulls 1.09/1.28 with v3: per-epoch errors right, but a FIELD-COHERENT PM error remained
+      (per-brick 0.47/0.59 mas/yr beyond noise; mean offset -0.13/+0.31; extra x baseline ~ const).
+- [x] A10 (2026-10-26, Nada: go ahead) Exposure-CCD zero points (py_files/zeropoints.py; table on CFS
+      ls-motions/zeropoints/zeropoints-dr10-v2.fits: 3,153,093 exposure-CCDs, 58,445 exposures, 290.5M Gaia epochs,
+      median 74 stars; own ZP 98.9%, exposure fallback 0.9%, none 0.2%). Jitter beyond noise RA 2.2 / Dec 4.2 mas
+      (g 3.7/5.2 .. z 1.5/3.5), mostly CCD-to-CCD; time drift -0.20 / +0.12 mas/yr. Cross-validated (other half's ZPs),
+      slices 000+040, G 16-19.5: mean offset -0.23/+0.26 -> +0.03/+0.01; scatter 1.56/1.81 -> 1.52/1.64; brick-coherent
+      0.47/0.55 -> 0.36/0.32 mas/yr. Pipeline: zp_full_fit_* columns (final update step), PM fit uses them. Paper:
+      sec:zeropoints added. Error model refit on ZP-corrected residuals and adopted (ERRMODEL 5121325b; iso g 6.5+1.5tz,
+      r 5.5+2.0tz, i 5.5+1.5tz, z 5.5+2.0tz; along g 1.0+6.0tz, r 6.5tz, i 1.0+3.5tz, z 5.0tz mas). Slice-000 test, clean
+      Gaia stars: mean offset +0.06/+0.01, scatter 1.57/1.73 mas/yr (v2 1.72/2.01), PM pulls 1.13/1.24 (bright 1.26/1.36),
+      parallax pull 1.11. A PM-level floor (s/T) would fix the pulls; Nada 2026-10-26: not worth it -> report the
+      measured pull widths in the paper instead. Full redo of 000-063 submitted. Then:
+      combine, re-check PM pulls, figures. Ask Dustin: Gaia release / epoch used by CP astrometry per survey (drift).
 ### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
 - [x] B1 (2026-10-23) py_files/ringmap_build.py on a compute node (35 min): 294M Gaia-star epochs of 000-063
       (sigma < 10 mas, with colour, not bright/saturated), new DCR removed. Held-out bricks (20%), per-axis scatter g/r/i/z:
@@ -164,7 +184,12 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
 - [x] B2 (2026-10-23, with B1). Check per band that the new maps improve scatter; regenerate F4a (one CCD) and F4b (whole focal plane)
       from the new maps (run/ringmap-plots.ipynb: point RINGMAPS_PATH at the new file).
 ### C. Lateral colour (needs B1) -- James: the correction looks right
-- [ ] C1. Refit the smooth lateral model on the new CCD-map output (also re-check the pivot c0: data median 1.77).
+- [x] C1 (2026-10-23) run/lateral-model-dr10.ipynb (compute node): 43.8M epochs from 12,021 bricks (15% of the B1
+      sample) after the new DCR + ringmaps-dr10. Held-out per-axis scatter g/r/i/z: none 12.47/10.93/9.73/9.27, old
+      coefficients 11.97/10.91/9.88/9.27 (made i worse), refit with c0 = 1.469 (median g-i of the map stars)
+      11.84/10.88/9.71/9.26 -- adopted (py_files/lateral_model_poly3.json). Per-band c0 (g 0.92 .. z 1.69) tested on a
+      4% subset: no gain (g 11.89 vs 11.87). Lateral colour matters mainly in g (rms applied shift 6.3 mas; r 1.6, i 0.9,
+      z 0.4). Was: Refit the smooth lateral model on the new CCD-map output (also re-check the pivot c0: data median 1.77).
 - [ ] C2. Investigate the colour-independent left/right dipole left in F5 (not lateral colour; CCD maps / WCS?).
 ### D. Pipeline fixes to include in the rerun
 - [x] D1 (2026-10-23) done: brick_DCR colour lookup and create_brick_catalogue grouping + row indexing on
@@ -198,7 +223,33 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       older files) and writes SIGSYS into each catalogue header. Check (run/pm-error-model.ipynb): realistic PM errors match
       the scatter of ours - Gaia for bright clean Gaia stars (~2.2 mas/yr), slightly conservative in RA.
 ### E. Full rerun of 000-063 (needs A2, B1, C1, D1-D2 (+D4/D5); ~20-25 node-hours, 4 jobs) -> combine -> rsync to CFS
+- [x] E (2026-10-25) v2 run: 4 jobs (3.5-5 h each), 81,491/81,491 bricks ok, 0 failed (v1: 195 failed) ->
+      /pscratch/sd/n/nelfalou/legacypm-catalogue-v2/. Combined (v2/combined/, 169 GB): 266,021,111 PSF objects with PMs,
+      24,184,320 Gaia stars. pm_analysis.COMBINED_DIR -> v2 (V1_COMBINED_DIR kept for the calibration fits: ringmap_build,
+      dcr-polyfit, colour-fallback, lateral-model-dr10 stay on v1 so the adopted models are reproducible).
+      Spot check (170 bricks): all columns/cards present; DECFIX by source correct (CFS/archive INPDATE True, scratch
+      DDIVFIX False); clean 74%; flags FEW 11.1, SHORT 9.6, BAD_EPOCHS 9.5, BRIGHT 5.0, NO_COLOUR 4.4, FIT_FAILED 4.4,
+      SAT 1.0%; colour g-i 87.6 / g-z 7.9 / none 4.4%.
+      First look, slice 000 clean Gaia stars, ours - Gaia (4-param), v1 -> v2: robust scatter RA 2.40 -> 1.72, Dec 2.87
+      -> 2.01 mas/yr; |dPM| > 30: 1.00% -> 0.09% (0.18% ignoring BAD_EPOCHS); |pull| > 5: 3.67 -> 0.66%; pull width
+      RA 1.05 -> 0.91, Dec 1.31 -> 1.08. Dec/RA pulls by Dec: ~1.0-1.1/0.9 near Dec -45..+15, rising to 1.22 at -80 and
+      1.40 at +15..+30 (far from CTIO zenith, high airmass) -> the parallactic-direction excess (decision B) is real and
+      airmass-driven; RA pulls < 1 suggest sigma_sys slightly high for RA. TODO: copy v2 to CFS; rerun figure notebooks.
 ### F. Figures
+- [x] F-v2 (2026-10-25) Regenerated on v2 (compute node): err-plots, dcr-plots (F3 now the two-line model), pm-error-model,
+      h3-error-budget (table + floor), pull-vs-mag; ringmap figures unchanged (same maps).
+      BUG FIXED: err-plots loaded Gaia stars with pma._COLUMNS, which lacks pm_quality/maskbits/fluxes, so clean_mask
+      silently fell back to epochs + baseline + pm_flag only (no BAD_EPOCHS/BRIGHT/SATURATED/NO_COLOUR) -- true for ALL
+      earlier versions of F7/F8/F9/parallax figures. load_combined now always adds QUALITY_INPUT_COLUMNS. With it
+      (slices 000-001): 351,676 clean Gaia stars (was 446,987), PM pull widths RA 0.92 / Dec 1.09 (4-param), |pull| > 5
+      0.2 / 0.5% (was 3.1 / 3.4%); parallax pull 0.88, ours - Gaia parallax median -0.3 mas at all G (zero-point offset;
+      mention in paper), scatter ~5 mas. F7 stripe gone.
+      H3 v2 per-axis scatter none -> all corrections: g 21.45 -> 11.76, r 14.13 -> 10.61, i 12.82 -> 9.71, z 11.27 -> 9.19
+      mas (g CCD maps now remove 8.4 mas). Implied systematic ~11.5-12 mas at G 15.5-18.5.
+      Pull refit on v2 (slice 000): k = 1 all bands; core sigma_sys g 10, r 8, i 8, z 8 mas (adopted 16/12/12/10 were fit
+      on v1) -> RA PM pulls 0.92 consistent with sigma_sys too large; Dec 1.09 = high-airmass parallactic excess
+      (decision B). Both need the LM + PM steps rerun (ivar_total is written by the lateral step).
+      F11 footprint: whole 000-063 (81,491 bricks), binned median objects/brick, FEW_EPOCHS / SHORT_BASELINE lines.
 - [x] Quick plot changes (2026-10-22, tested on 000-001; F2/F3 on 058): F1 median lines (outlined) + 16-84% band,
       faint points; F2 >= 100 epochs per bin, coarser bins; F3 data + fit only; F5 three rows (data before / smooth
       model / data after), >= 50 epochs per bin; F6 one panel per band, valid fits only (full_fit_dra != 0), bins
@@ -228,7 +279,23 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
 - [ ] Run the catalogue figures (F7-F11) on all of 000-063 (compute node); regenerate all figures after E;
       re-derive the error floor from F6.
 ### I. Paper text and science
-- [ ] I0. Catalogue description: a table/list of all cuts and flags (pm_flag, pm_quality bits with thresholds,
+- [x] I7 (2026-10-23) Build now clean (no LaTeX/BibTeX errors): \niceurl defined, \gtrsim -> \ga, mybib.bib accents ->
+      LaTeX escapes, VHS author list repaired. Dustin's comments resolved: keywords; Tycho-2 (Hog2000) + USNO-B1.0
+      (Monet2003) paragraph; SDSS reworded (ugriz, 1/3 sky, r depth, Stripe 82 PMs Bramich2008, USNO-B+SDSS Munn2004);
+      Pan-STARRS own paragraph (grizy, 3/4 sky, PMs, GPS1 Tian2017); J-band depths; LSST name + refocus (same systematics).
+      New bib entries typed from memory -- check against ADS. \todo{verify} left on SDSS r and NIR J depths.
+      OPEN \dstn: abstract (last), LSST DM pipeline paper on PMs (literature search), Gaia-vs-LS positional-error plot.
+- [x] I6 (2026-10-23) main.tex methods updated to the current pipeline: DCR (two-line model eq:dcr + tab:dcr, g-z fallback,
+      fig:dcr_model = dcr_amplitude_fit.pdf -- regenerate), CCD maps (B1 sample, bin-size validation), lateral colour (smooth
+      poly model, c0 = 1.469, C1 validation; old binned-map text removed), measurement uncertainties (per-band sigma_sys,
+      pull calibration k = 1, heavy tails, Dec-ivar bug + fix). Removed the old Results figure plots/ringmaps.png (missing
+      file, duplicate fig:ringmaps label). Still stale: sec:corr_analysis numbers (floor ~22 -> ~15 mas, \todo) and
+      fig:scatter_vs_mag / fig:lateral placeholders. Pre-existing build errors left: \% in \href URLs (l.80-101),
+      \gtrsim (needs amssymb), bibtex mangles Ivezic/Zeljko accents in mybib.bib l.20.
+- [x] I0 (2026-10-23) main.tex sec:flags replaces the old 'Sample selection and quality cuts' (N >= 5 / 180 d cuts that
+      no longer exist): measurements used, when no fit is made, pm_quality table (tab:pm_quality) with threshold
+      justifications, pm_flag; new sec:columns with tab:columns + header keywords. \todo's left for final-sample numbers
+      and the data-release location. objid_clash omitted (v2 has no clashes). Was: Catalogue description: a table/list of all cuts and flags (pm_flag, pm_quality bits with thresholds,
       objid_clash, what is excluded from fits: unmeasured epochs, non-PSF), and possibly of all output columns
       (name, unit, meaning) -- for the paper's data-product section and a README with the catalogue.
 - [ ] I1. Application section (James): research what science PM catalogues enable (disk vs halo kinematics,

@@ -22,8 +22,9 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    `run/ringmap-build.ipynb` (removes 6-8 mas per axis in every band on held-out bricks; the Apr 2024
    `ringmaps.fits` added 9 mas in g).
 3. `py_files/brick_lateralmaps.py` -> `lm_full_fit_*`. Smooth lateral-colour model (since 2026-10-10): shift =
-   (g−i − 1.642) × 2-D order-3 polynomial in focal-plane position, per filter. Coefficients:
-   `py_files/lateral_model_poly3.json`, fit by `run/lateral-model.ipynb`. (The old binned `lateralmaps.fits` was
+   (g−i − c0) × 2-D order-3 polynomial in focal-plane position, per filter. Coefficients:
+   `py_files/lateral_model_poly3.json`, refit 2026-10-23 (C1) by `run/lateral-model-dr10.ipynb` on all 000-063 Gaia stars
+   after the two-line DCR and `ringmaps-dr10.fits`; c0 = 1.469 = median g−i of the map stars (was 1.642). (The old binned `lateralmaps.fits` was
    noise-dominated and is no longer used.)
    Steps 2-3 build maps from σ < 10 mas measurements but apply them to every measurement with a valid fit.
 4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `lm_full_fit_*`, PSF sources only,
@@ -59,7 +60,8 @@ login currently fails. The image provides software only; the code always runs fr
 ## Constraints
 - Goal: RA 000-063 processed with the current code (`slurm/run_bricks.py 000-063`, see RUNBOOK.md) for the analysis
   and plots. Inputs exist for 81,491 of 84,358 bricks; the rest (058-059 and 557 gaps) are in missing_bricks.txt.
-  The 548 archived bricks predate the current code; run_bricks.py reruns them from their DCR columns automatically.
+  The 548 archived bricks predate the current code; run_bricks.py rebuilds their inputs and reruns every step
+  (DCR included) automatically. Run v2 (all current corrections) writes to `/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/`.
 - pscratch is purged: copy finished output to CFS.
 - **All paper figures must be produced by notebooks in `run/`** (`err-plots.ipynb` is the main one), saved into
   `writeup/plots/`. Don't make figures with ad hoc scripts.
