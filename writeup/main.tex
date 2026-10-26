@@ -10,6 +10,7 @@
 \newcommand{\bibtex}{\textsc{Bib}\!\TeX}
 
 \newcommand{\dstn}[1]{{\color{teal}{#1}}}
+\providecommand{\niceurl}[1]{\texttt{#1}} % URLs in comments
 \newcommand{\todo}[1]{{\color{red}{[TODO: #1]}}}
 \newcommand{\figtodo}[1]{\fbox{\parbox{0.45\textwidth}{\centering\vspace{2em}{\color{red}Figure to be generated:}\\ #1\vspace{2em}}}}
 
@@ -37,16 +38,17 @@ Waterloo, ON, N2L 2Y5, Canada \\
 \pagerange{\pageref{firstpage}--\pageref{lastpage}}
 \maketitle
 
-% \begin{abstract}
-% I did this and that, resulting in that and this.
-% \end{abstract}
+\begin{abstract}
+\dstn{Write the abstract last}
+\end{abstract}
 
 % Select between one and six entries from the list of approved keywords.
 % Don't make up new ones.
 
-% \begin{keywords}
+\begin{keywords}
 % keyword1 -- keyword2 -- keyword3
-% \end{keywords}
+astrometry -- proper motions -- catalogues -- surveys -- Galaxy: kinematics and dynamics -- methods: data analysis
+\end{keywords}
 
 
 \section{Introduction}
@@ -76,12 +78,17 @@ Astronomical surveys have historically provided essential data by compiling prec
 
 The Hipparcos satellite, launched by ESA, was groundbreaking as the first dedicated astrometry mission, offering proper motions and parallaxes for over 100,000 stars. This dataset, however, was limited to relatively bright stars, with uncertainties rising significantly for fainter objects near its detection limit of \( V \approx 12 \) mag \citep{HIPPARCOS_1997}. %Following this, the Gaia mission has transformed astrometry with precision down to 0.02 mas for over a billion stars up to \( G \approx 21 \) mag in its third data release (DR3), providing an extensive view of stellar motion in the Milky Way \citep{GaiaDR2, GaiaDR3}.
 
-Ground-based optical surveys, such as the Sloan Digital Sky Survey (SDSS) and Pan-STARRS, have contributed significantly to astrometry and photometry with observations in the g, r, i, and z bands. These surveys offer deep observations down to $g \sim 23.5$ mag (SDSS) and $g \sim 23.3$ mag (Pan-STARRS), enabling the detection of faint stars and other celestial objects \citep{SDSS_2000, PanSTARRS_2016}. However, SDSS only performed single-pass observations, meaning that it did not provide proper motion measurements for most of its sources, except in the Stripe 82 region, where multiple observations were taken, allowing for proper motion studies \citep{SDSS_2000}. %However, ground-based observations are inherently affected by atmospheric interference, which limits astrometric precision compared to space-based missions. Furthermore, these surveys primarily avoid dusty Galactic plane regions due to significant extinction and focus on areas with less obscuration.
+Two all-sky catalogues extended proper motions to many more stars by combining positions from photographic plates spanning many decades. Tycho-2 \citep{Hog2000} combined the Tycho star mapper observations of the Hipparcos satellite with 144 ground-based catalogues, giving proper motions with precisions of $\sim\!2.5$\,mas\,yr$^{-1}$ for the 2.5 million brightest stars ($V \la 12$). USNO-B1.0 \citep{Monet2003} measured positions and proper motions for about a billion objects to $V \approx 21$, from digitised photographic sky-survey plates taken over 50 years.
 
+Ground-based CCD surveys reach several magnitudes fainter than the photographic catalogues, with better photometry, but cover less of the sky. The Sloan Digital Sky Survey (SDSS) imaged about a third of the sky in five filters ($ugriz$) to $r \approx 22.2$ \todo{verify: SDSS 95\,per\,cent completeness for point sources} \citep{SDSS_2000}. It observed most of its footprint only once, so on its own it measured proper motions only in the repeatedly observed Stripe~82 region \citep{Bramich_2008}. Elsewhere, SDSS positions have been combined with older catalogues to measure proper motions, for example with USNO-B \citep{Munn2004}.
 
-Infrared surveys, such as the VISTA Hemisphere Survey (VHS), UKIRT Infrared Deep Sky Survey (UKIDSS), and Two Micron All-Sky Survey (2MASS), provide important data for studying stars obscured by dust. VHS reaches detection limits of $K \sim 20$ mag \citep{VHS}. UKIDSS achieves similar depths in its various sub-surveys \citep{UKIDSS_2007}. In contrast, 2MASS, which prioritized all-sky coverage over depth, has limits of $K \sim 14$ mag \citep{2MASS_2003}. However, the lower resolution and sensitivity of these infrared surveys, compared to optical surveys, restrict their precision, particularly for faint objects.
+The Pan-STARRS1 $3\pi$ survey \citep{PanSTARRS_2016} covers the three quarters of the sky north of declination $-30\degr$ in five filters ($grizy$), with about a dozen epochs per filter over four years, reaching $r \approx 23.2$ in the stacked images. Pan-STARRS1 measures proper motions and parallaxes from its own epochs, and its positions have been combined with SDSS and Gaia to extend the time baseline \citep[e.g.][]{Tian_2017}. Like the Legacy Surveys, these are ground-based surveys, and their astrometry is limited by the atmosphere and the detectors rather than by photon noise for bright stars.
 
-Finally, future observations with the Vera Rubin Observatory and the Legacy Survey of Space and Time (LSST) promise to bridge several of these gaps by observing faint stars with frequent revisits across the southern sky. LSST will provide exceptional temporal coverage for proper motion studies but will still face challenges observing obscured or highly reddened regions in the galactic plane \citep{Rubin2019}.
+Infrared surveys, such as the VISTA Hemisphere Survey (VHS), UKIRT Infrared Deep Sky Survey (UKIDSS), and Two Micron All-Sky Survey (2MASS), provide important data for studying stars obscured by dust. VHS reaches $J \approx 20.2$ \citep{VHS}, and the UKIDSS Large Area Survey $J \approx 19.6$ \citep{UKIDSS_2007}. In contrast, 2MASS, which prioritized all-sky coverage over depth, reaches $J \approx 15.8$ \citep{2MASS_2003} \todo{verify these $J$ depths (Vega) against the survey papers}. However, the lower resolution and sensitivity of these infrared surveys, compared to optical surveys, restrict their precision, particularly for faint objects.
+
+Finally, the Vera Rubin Observatory's Legacy Survey of Space and Time (LSST) will image the southern sky repeatedly for ten years to $r \approx 27$ in its coadded images \citep{Rubin2019}. Measuring the changing sky, including the motions of faint stars, is one of its primary purposes. LSST will use ground-based CCD imaging, like the Legacy Surveys, and will very likely face the same kinds of systematic errors that this paper deals with: differential chromatic refraction, sensor effects such as tree rings, and colour-dependent optical distortions. The methods and lessons of this paper are therefore relevant to LSST as well.
+
+\dstn{Find and cite the most recent LSST Data Management / pipeline paper you can find, and see what they say about measuring proper motions and parallaxes.  I can only find this 2019 one: \niceurl{https://ui.adsabs.harvard.edu/abs/2019ASPC..523..521B/abstract}}
 
 \begin{table*}
     \centering
@@ -200,19 +207,19 @@ Although the Taylor expansion measurements may prove acceptable, the catalogue i
 
 \section{Data Corrections} \label{sec:corrections}
 
-The per-exposure positions from the forced photometry contain several systematic errors that are much larger than their statistical uncertainties for bright stars. We correct three of them, in order: differential chromatic refraction (DCR; Section~\ref{sec:dcr}), CCD-specific distortions (Section~\ref{sec:ccd}), and lateral colour (Section~\ref{sec:lateral}). The corrections are applied in sequence: each correction is measured from Gaia stars that have already had the previous corrections applied, so each one only models the residual left by the steps before it. Throughout, Gaia stars serve as the reference. Their positions at the epoch of each exposure, predicted from Gaia astrometry, tell us where each star truly was.
+The per-exposure positions from the forced photometry contain several systematic errors that are much larger than their statistical uncertainties for bright stars. We correct four of them, in order: differential chromatic refraction (DCR; Section~\ref{sec:dcr}), CCD-specific distortions (Section~\ref{sec:ccd}), lateral colour (Section~\ref{sec:lateral}), and the zero point of each CCD in each exposure (Section~\ref{sec:zeropoints}). The corrections are applied in sequence: each correction is measured from Gaia stars that have already had the previous corrections applied, so each one only models the residual left by the steps before it. Throughout, Gaia stars serve as the reference. Their positions at the epoch of each exposure, predicted from Gaia astrometry, tell us where each star truly was.
 
 \subsection{Differential Chromatic Refraction} \label{sec:dcr}
 
 
 Differential Chromatic Refraction (DCR) refers to the phenomenon where the apparent position of an astronomical object varies with its color or wavelength. This effect is caused by the Earth's atmosphere acting as a prism, dispersing light from celestial objects into different colors or wavelengths as it passes through the atmosphere. DCR becomes particularly significant when observing near the horizon, where the light from celestial objects passes through a thicker layer of the Earth's atmosphere, and for observations in bluer wavelengths.
 
-We model DCR following \cite{Bernstein_2017}:
+To first order, the DCR shift of a star is proportional to $\tan z$ and to the star's colour \citep{Bernstein_2017}:
 \begin{equation}
     \Delta \mathbf{x} = K_b \, c \, \tan z \; \hat{\mathbf{p}},
-    \label{eq:dcr}
+    \label{eq:dcr_linear}
 \end{equation}
-where $\Delta \mathbf{x}$ is the apparent shift of a star, $c$ is its colour, $z$ is the zenith angle, $\hat{\mathbf{p}}$ is the unit vector on the sky pointing towards the zenith (i.e.\ along the parallactic angle), and $K_b$ is a constant for each filter band $b$ that depends on the instrumental bandpass and the refractive index of the atmosphere.
+where $\Delta \mathbf{x}$ is the apparent shift of a star, $c$ is its colour, $z$ is the zenith angle, $\hat{\mathbf{p}}$ is the unit vector on the sky pointing towards the zenith (i.e.\ along the parallactic angle), and $K_b$ is a constant for each filter band $b$ that depends on the instrumental bandpass and the refractive index of the atmosphere. We find that the data require a more flexible dependence on colour (below).
 
 For every measurement of every star, we compute the hour angle at the middle of the exposure from the exposure time stamp, the star's position, and the longitude of Cerro Tololo, and from it the airmass $X$ and parallactic angle. We use $\tan z = \sqrt{X^2 - 1}$, which holds for a plane-parallel atmosphere. We then rotate the measured offset of the star (the difference between its fitted position in that exposure and its catalogue position; Section~\ref{sec:forced}) into the frame aligned with the parallactic angle, so that the component along $\hat{\mathbf{p}}$ contains the DCR signal. The perpendicular component should contain no DCR signal, and we use it as a check.
 
@@ -222,9 +229,38 @@ An important subtlety is that the Community Pipeline astrometric solution for ea
 \end{equation}
 where $g-i$ is the star's colour from the Tractor catalogue fluxes and $(g-i)_{\rm ref}$ is the mean colour of the astrometric reference stars on that CCD in that exposure. We estimate the latter from the mean Gaia $G_{\rm BP} - G_{\rm RP}$ colour of the reference stars, converted with the linear relation $(g-i) = -0.56 + 1.34\,(G_{\rm BP}-G_{\rm RP})$ \todo{source of this colour transformation}. We only correct stars with $-2 < c < 3$\,mag.
 
-We measured $K_b$ empirically from Gaia stars by fitting the slope of the offset along $\hat{\mathbf{p}}$ against $c \tan z$ in each band. We find $K_g = 29.82$ and $K_r = 7.91$\,mas\,mag$^{-1}$. As expected, the effect is much weaker in the redder bands, and we adopt $K_i = K_z = 1$\,mas\,mag$^{-1}$ \todo{confirm these were measured rather than set; if set, consider 0}. The correction is subtracted along $\hat{\mathbf{p}}$ and converted to pixel units using the DECam pixel scale of $0.262$\,arcsec\,pixel$^{-1}$.
+About 14\,per\,cent of point sources have no measured $g-i$, mostly because their brick has no $i$-band imaging. For these we predict $g-i$ from $g-z$, which tracks it closely along the stellar locus: a cubic fitted to stars with signal-to-noise ratio above 50 in all four bands predicts $g-i$ with a robust scatter of 0.025\,mag and a bias below 0.025\,mag at all colours, for $0 < g-i < 3.2$. Other colours are much poorer predictors ($g-r$, $r-z$ and Gaia $G_{\rm BP} - G_{\rm RP}$ give 0.12--0.17\,mag, with colour-dependent biases of up to 0.27\,mag), so we use no other fallback. Stars with neither colour are not corrected and are flagged (see Section~\ref{sec:flags}).
 
-\figtodo{$K_b$ fit per band: offset along $\hat{\mathbf{p}}$ vs.\ $c\tan z$ for Gaia stars, with best-fitting slopes (run/dcr-plots.ipynb).}
+To measure the colour dependence, we take Gaia stars with positional uncertainties below 10\,mas, before any correction, and compute the median offset along $\hat{\mathbf{p}}$ in cells of relative colour and $\tan z$ ($\sim\!80$ million measurements in RA 0--63\degr). The offsets scale linearly with $\tan z$ in every band, but not linearly with colour: the slope of offset against colour is steeper for blue stars than for red ones in $g$, and the reverse in $r$ and $i$. The relative colour distribution of the calibration stars is bimodal, with blue main-sequence turn-off stars and red K and M dwarfs, and the change of slope falls between the two populations. At fixed colour, however, the DCR shift does not depend on population \todo{one sentence on the H6 test}, so we model it as a function of colour alone, with two straight lines that meet at a break colour $c_b$:
+\begin{equation}
+    \Delta \mathbf{x} = \tan z \,\left[\, a_b + \beta_b^{\rm blue} \min(c - c_b, 0) + \beta_b^{\rm red} \max(c - c_b, 0) \,\right] \hat{\mathbf{p}},
+    \label{eq:dcr}
+\end{equation}
+with $c$ clipped to $[-1.5, 2.5]$\,mag. We fit the four parameters of each band to the cell medians, weighted by their uncertainties, choosing $c_b$ on a grid (Table~\ref{tab:dcr}). On cells from bricks held out of the fit, this model describes the medians with a weighted rms of 1.25, 0.55, 0.42 and 0.43\,mas in $g$, $r$, $i$ and $z$, as well as or better than polynomials in colour up to fifth order and better than a single linear slope. The correction is subtracted along $\hat{\mathbf{p}}$ and converted to pixel units using the DECam pixel scale of $0.262$\,arcsec\,pixel$^{-1}$. The $i$ and $z$ corrections are small but not negligible ($\sim\!3$ and $\sim\!1$\,mas at $\tan z = 1$ for a typical star).
+
+\begin{table}
+    \centering
+    \caption{DCR model parameters (equation~\ref{eq:dcr}): the break colour $c_b$, the shift $a_b$ at the break, and the slopes on the blue and red sides, per unit $\tan z$. Fitted to Gaia stars in RA 0--63\degr.}
+    \label{tab:dcr}
+    \begin{tabular}{lrrrr}
+        \hline
+        Band & $c_b$ & $a_b$ & $\beta_b^{\rm blue}$ & $\beta_b^{\rm red}$ \\
+             & (mag) & (mas) & (mas\,mag$^{-1}$) & (mas\,mag$^{-1}$) \\
+        \hline
+        $g$ & 0.05 & 3.5 & 39.7 & 25.1 \\
+        $r$ & 0.70 & 3.3 & 7.9 & 13.1 \\
+        $i$ & 0.50 & $-0.1$ & 3.4 & 6.3 \\
+        $z$ & $-0.10$ & $-0.8$ & 0.9 & 1.5 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\begin{figure*}
+    \centering
+    \includegraphics[width=\textwidth]{plots/dcr_amplitude_fit.pdf}
+    \caption{DCR as a function of relative colour, per band: offset of Gaia stars along the parallactic direction divided by $\tan z$ (greyscale: density; points: binned medians), with the adopted two-line model (solid) and a single linear slope (dashed). \todo{regenerate with run/dcr-plots.ipynb on the final catalogue; the current file shows the old linear fit.}}
+    \label{fig:dcr_model}
+\end{figure*}
 
 \subsection{CCD-Specific Distortions} \label{sec:ccd}
 In DECam CCDs, photons in the g, r, and i bands generate electron-hole pairs near the CCD surface, and the holes (charge carriers) must drift through the $250 \mu m$-thick silicon substrate to reach the pixel electrodes \citep{Bernstein_2017}. Ideally, this movement is guided by a vertical electric field; however, imperfections in the silicon or manufacturing process can create transverse electric fields that deflect the holes sideways. This lateral drift causes an astrometric shift, where the detected position of a photon appears offset, introducing systematic positional errors in astronomical observations. 
@@ -236,7 +272,9 @@ When comparing expected positions from Gaia and the observed positions, two main
 % TODO need this comparison with Berstein?
 To correct for these distortions, \cite{Bernstein_2017} modeled the tree rings by identifying the ring center for each CCD through visual examination of the flat-field images. Subsequently, they generated templates of the expected astrometric distortion around this center from a high-pass-filtered, azimuthally averaged profile of the flat-field signal \citep{Bernstein_2017}.
 
-In the case of this paper, we used Gaia data to empirically create distortion maps, which we then used to correct the positions of objects in the CCDs. Starting from the DCR-corrected positions, we binned the CCD pixels into $16 \times 16$\,pixel bins ($128 \times 256$ bins per CCD) and stored the median difference between the expected position from Gaia and the observed position by DECam in each of the $x$ and $y$ directions. Because the magnitude of the effect depends on how deep photons penetrate the silicon, and therefore on the filter, we created a separate distortion map for each CCD and filter. We used only measurements with no data-quality flags set. In total, the maps were built from over 461 million measurements of Gaia stars, an average of $\sim 6,400$ per bin per map \todo{check: $461\times10^6 / (32{,}768$ bins $\times \sim\!240$ CCD--filter maps$) \approx 60$ per bin; one of these numbers needs correcting}.
+In the case of this paper, we used Gaia data to empirically create distortion maps, which we then used to correct the positions of objects in the CCDs. Starting from the DCR-corrected positions, we binned the CCD pixels into $16 \times 16$\,pixel bins ($128 \times 256$ bins per CCD) and stored the median difference between the observed position and the position expected from Gaia in each of the $x$ and $y$ directions. Because the magnitude of the effect depends on how deep photons penetrate the silicon, and therefore on the filter, we created a separate distortion map for each of the 61 CCDs and each filter. We used Gaia stars with positional uncertainties below 10\,mas, no data-quality flags, a colour (so that their DCR correction is reliable), and not affected by bright stars or saturation: 294 million measurements in RA 0--63\degr, a median of 28--45 per bin depending on the band.
+
+The bin size trades resolution against noise. We built maps from 80\,per\,cent of the bricks and measured, on the remaining 20\,per\,cent, the robust per-axis scatter of the corrected positions. With $16$-pixel bins the scatter drops from 14.6, 13.1, 12.4 and 11.3\,mas to 12.4, 10.8, 9.9 and 9.6\,mas in $g$, $r$, $i$ and $z$, removing 6--8\,mas in quadrature in every band. Coarser bins remove less ($32$ pixels: 5.8--7.3\,mas; $64$ pixels: 5.2--6.2\,mas), so the tree rings have structure on scales below 32 pixels that the finer bins capture despite their noise. The maps used for the catalogue are built from all bricks.
 
 % In the case of this paper, modeling was not needed since we have extensive Gaia data to use. To construct distortion maps, a comprehensive dataset comprising about XX (TODO) stars with Gaia 5-parameter astrometry (including position, magnitude, proper motion, and parallax) and Legacy forced photometry measurements is partitioned based on CCD and filter specifications. Within each subset, the adjacent pixels on the CCD are aggregated into bins of approximately $16^2 \textsc{pixel}^2$, and the average difference in the shift along the x and y directions between the Gaia and Legacy data is computed for each bin. This process results in the creation of distortion maps that capture the variations induced by the CCD and filter combinations.
 
@@ -255,12 +293,14 @@ Applying these distortion maps to actual data simply reverses the process. Each 
 \subsection{Lateral Colour} \label{sec:lateral}
 Lateral colour in DECam is caused by chromatic aberration in its wide-field corrector optics: light of different wavelengths is refracted by slightly different amounts, which produces wavelength-dependent positional offsets on the focal plane. The offset is mostly radial and grows towards the edge of the field of view (Figure~\ref{fig:lateral}). Within a single band, stars of different colours have different effective wavelengths, so the shift depends on a star's colour.
 
-The CCD distortion maps of Section~\ref{sec:ccd} are built from all Gaia stars regardless of colour, so they already remove the lateral-colour shift for a star of typical colour. What remains is the colour-dependent part. Because each CCD sits at a fixed position in the focal plane, we can model this part with maps analogous to the CCD distortion maps, but storing the shift \emph{per unit colour}:
+The CCD distortion maps of Section~\ref{sec:ccd} are built from all Gaia stars regardless of colour, so they already remove the lateral-colour shift of a star of typical colour. What remains is the colour-dependent part. Chromatic aberration is a smooth optical effect across the focal plane, so we model it with a few parameters per band rather than with binned maps:
 \begin{equation}
-    \Delta \mathbf{x}_{\rm lat}(x, y) = \mathbf{L}_{b,{\rm CCD}}(x, y)\,\left(c - c_0\right),
+    \Delta \mathbf{x}_{\rm lat} = (c - c_0)\,\left[ P^x_b(u, v),\, P^y_b(u, v) \right],
     \label{eq:lateral}
 \end{equation}
-where $c = g - i$, and the pivot colour $c_0 = 1.642$\,mag is approximately the median colour of the Gaia calibration sample \todo{confirm}. Starting from the DCR- and CCD-corrected positions of Gaia stars, we divide each measured offset by $(c - c_0)$ and take the median in each $16 \times 16$\,pixel bin, separately for each CCD and filter. Stars with colours close to $c_0$ have a small, noisy lever arm, so we build the maps using only the bluest and reddest thirds of the colour distribution ($0.07 < c < 0.92$ and $2.33 < c < 3.49$\,mag; the 1st, 33rd, 66th and 99th percentiles). As for the CCD maps, the correction is evaluated with a bilinear spline and subtracted from every measurement.
+where $c = g - i$ (measured, or predicted from $g-z$; Section~\ref{sec:dcr}), $(u, v)$ is the position in the focal plane, and $P^x_b$ and $P^y_b$ are independent two-dimensional polynomials of total order 3 (10 coefficients each) for band $b$. The pivot colour $c_0$ is the colour at which the correction vanishes. Since the CCD maps remove the shift of the median star in each bin, we set $c_0 = 1.469$\,mag, the median $g-i$ of the stars the maps were built from. We fit the coefficients to the residuals of the same Gaia stars after the DCR and CCD corrections, with the median residual of each CCD and band subtracted, by iteratively $3\sigma$-clipped least squares. An earlier version with binned maps per unit colour was dominated by noise and increased the scatter.
+
+On bricks held out of the fit, the correction reduces the robust per-axis scatter of Gaia-star positions from 12.47 to 11.84\,mas in $g$, and by less than 0.1\,mas in $r$, $i$ and $z$: lateral colour matters mainly in $g$, where the applied shift has an rms of 6.3\,mas (1.6, 0.9 and 0.4\,mas in $r$, $i$ and $z$). A separate pivot colour per band gives no further improvement. The correction is subtracted from every measurement.
 
 \begin{figure*}
     \centering
@@ -270,11 +310,21 @@ where $c = g - i$, and the pivot colour $c_0 = 1.642$\,mag is approximately the 
 \end{figure*}
 
 
+\subsection{Exposure Zero Points} \label{sec:zeropoints}
+
+The three corrections above are static models: each depends on a star's colour, airmass, or position on the detector or in the focal plane, and is the same for every exposure. After applying them, the stars on one CCD in one exposure still share a common offset from their Gaia-predicted positions. We call this the zero point of that CCD in that exposure. We found it through its effect on proper motions: the proper motions of Gaia stars in the same brick differ from Gaia's in the same direction, by $\sim\!0.5$\,mas\,yr$^{-1}$ beyond what their individual errors allow, and on average our proper motions were offset from Gaia's by $-0.2$ and $+0.3$\,mas\,yr$^{-1}$ in right ascension and declination. A shared positional offset of a few mas per exposure produces exactly this: stars observed together inherit the same errors, so their proper motions err together, and a slow drift of the offsets with time adds a spurious proper motion common to every star.
+
+We measure the zero point of every CCD in every exposure as the median offset, after the previous corrections, of the bright Gaia stars on it: stars with positional uncertainties below 10\,mas, a full five-parameter Gaia astrometric solution, and no bright-star or saturation flags. In RA 0--63\degr, this gives zero points for 3.15 million CCD-exposures (58\,445 exposures), from 290 million measurements, with a median of 74 stars each. The zero points scatter by 2.2\,mas in right ascension and 4.2\,mas in declination, beyond the 1.2\,mas expected from measurement noise alone. They are larger in $g$ (3.7 and 5.2\,mas) than in $z$ (1.5 and 3.5\,mas), and vary mostly from CCD to CCD within an exposure (2.2 and 3.6\,mas) rather than as a whole exposure (1.1 and 2.4\,mas). This is consistent with atmospheric turbulence, which displaces stars coherently over arcminute scales within an exposure \citep{Bernstein_2017}, together with residual errors in the astrometric solution of each CCD. Averaged over all exposures, the zero points also drift with time, by $-0.20$\,mas\,yr$^{-1}$ in right ascension and $+0.12$\,mas\,yr$^{-1}$ in declination between 2013 and 2021: a spurious proper motion of the whole reference frame, matching the mean offset of our proper motions from Gaia's. \todo{Ask Dustin which Gaia release and reference epoch the CP astrometry used for each survey; a change over the years could explain the drift.}
+
+We subtract each CCD's zero point from the positions of every object measured on that CCD in that exposure. For the 1\,per\,cent of CCD-exposures with fewer than 10 such Gaia stars, we use the median zero point of the other CCDs in the exposure (0.9\,per\,cent), or apply no correction if fewer than three CCDs have one (0.2\,per\,cent). Because the correction is measured on Gaia stars, comparing the corrected proper motions of the same stars with Gaia would be partly circular. We therefore validated it by splitting the Gaia stars into two random halves, measuring zero points from each half, and correcting each star with the zero points of the other half only. For 177\,000 clean Gaia stars with $16 < G < 19.5$ in two RA slices, the cross-validated correction removes the mean offset from Gaia (from $-0.23$ and $+0.26$ to $+0.03$ and $+0.01$\,mas\,yr$^{-1}$), reduces the scatter of our proper motions about Gaia's from 1.56 to 1.52\,mas\,yr$^{-1}$ in right ascension and from 1.81 to 1.64\,mas\,yr$^{-1}$ in declination, and reduces the part of that scatter shared by stars in the same brick from 0.47 to 0.36 and from 0.55 to 0.32\,mas\,yr$^{-1}$. Fainter Gaia stars ($19.5 < G < 21$), which contribute little to the zero points, improve similarly (declination scatter 2.28 to 2.13\,mas\,yr$^{-1}$). The cross-validated and full corrections give the same results to within 0.04\,mas\,yr$^{-1}$, so the circularity is negligible in practice. \todo{Re-measure on the final catalogue; consider a figure of zero points vs.\ time and across the focal plane.}
+
+Tying each exposure's astrometry to Gaia in this way places all our proper motions, including those of stars far fainter than Gaia's limit, in the Gaia reference frame. The remaining field-coherent error ($\sim\!0.3$\,mas\,yr$^{-1}$) may come from structure on scales smaller than a CCD, which this correction cannot remove.
+
 \subsection{Analysis of Corrected Data} \label{sec:corr_analysis}
 
 To measure how much each correction helps, we compare the per-exposure positions of Gaia stars with their Gaia-predicted positions at each stage of the correction sequence. Figure~\ref{fig:scatter_vs_mag} shows the median offset, $\sqrt{\Delta\alpha_*^2 + \Delta\delta^2}$, as a function of magnitude, together with the median statistical uncertainty reported by the forced-photometry fit.
 
-For faint stars ($g \gtrsim 22$), all curves converge on the statistical uncertainty: photon noise dominates and the systematic corrections make little difference. For bright stars, the statistical uncertainties fall below 1\,mas, but the observed scatter levels off at a floor set by systematic errors. Before correction, this floor is $\approx 22$\,mas. The DCR correction gives the largest single improvement, and after all three corrections the floor drops to $\approx 15$\,mas \todo{re-measure from the regenerated figure}. The remaining floor is several times larger than the statistical errors of bright stars. It plausibly reflects systematic errors we have not modelled, such as atmospheric turbulence, which is coherent on arcminute scales within an exposure \citep{Bernstein_2017}, and residual errors in the per-CCD astrometric solutions \todo{confirm with Dustin}. We account for this floor explicitly when fitting proper motions (Section~\ref{sec:pm_method}).
+For faint stars ($g \ga 22$), all curves converge on the statistical uncertainty: photon noise dominates and the systematic corrections make little difference. For bright stars, the statistical uncertainties fall below 1\,mas, but the observed scatter levels off at a floor set by systematic errors. Before correction, this floor is $\approx 22$\,mas. The DCR correction gives the largest single improvement, and after all the corrections the floor drops to $\approx 15$\,mas \todo{re-measure from the regenerated figure}. The remaining floor is several times larger than the statistical errors of bright stars. It plausibly reflects systematic errors we have not modelled, such as atmospheric turbulence, which is coherent on arcminute scales within an exposure \citep{Bernstein_2017}, and residual errors in the per-CCD astrometric solutions \todo{confirm with Dustin}. We account for this floor explicitly when fitting proper motions (Section~\ref{sec:pm_method}).
 
 \begin{figure}
     \centering
@@ -316,20 +366,72 @@ We choose the reference epoch $t_{\rm ref}$ for each star as the inverse-varianc
 
 The forced-photometry fit provides a statistical uncertainty for each position. As shown in Section~\ref{sec:corr_analysis}, for bright stars this greatly underestimates the true scatter, which levels off at a systematic floor. We therefore add a systematic term in quadrature to each coordinate:
 \begin{equation}
-    \sigma_i^2 = \sigma_{{\rm stat},i}^2 + \sigma_{\rm sys}^2, \qquad \sigma_{\rm sys} = 14.8\,{\rm mas},
+    \sigma_i^2 = \sigma_{{\rm stat},i}^2 + \sigma_{{\rm sys},b}^2,
 \end{equation}
-where $\sigma_{\rm sys}$ is the bright-star floor of the fully corrected positions in Figure~\ref{fig:scatter_vs_mag} \todo{that figure shows the median 2-D offset, which for a 2-D Gaussian is $\approx 1.18\,\sigma$ per axis, implying $\sigma_{\rm sys} \approx 12.6$\,mas per axis; decide whether to re-derive}. Without this floor, bright stars would receive unrealistically large weights, and their fitted proper-motion uncertainties would be far too small.
+with $\sigma_{\rm sys}$ = 16, 12, 12 and 10\,mas in $g$, $r$, $i$ and $z$ \todo{update: the error model is being refitted after the exposure zero points (Section~\ref{sec:zeropoints}), with a systematic term that grows with airmass and an extra term along the refraction direction, which correlates the right-ascension and declination errors of each measurement}. Without this term, bright stars would receive unrealistically large weights, and their fitted proper-motion uncertainties would be far too small.
 
-\subsection{Sample selection and quality cuts}
+We calibrated this error model with the residuals of the fits themselves. For each clean point source we fit a straight line (equation~\ref{eq:pm_model}) and divide each measurement's residual by its uncertainty, giving a pull; if the uncertainties are right, the pulls have unit width at every magnitude. Writing $\sigma_i^2 = (k\,\sigma_{{\rm stat},i})^2 + \sigma_{{\rm sys},b}^2$, we find $k$ and $\sigma_{\rm sys}$ per band that give a robust pull width of one in every magnitude bin, using 23 million measurements of 0.7 million stars. The best fit has $k = 1$ in every band (0.9 in $i$): faint stars, whose errors are dominated by photon noise, have pulls of width 0.90--1.02 in both coordinates, so the statistical uncertainties of the forced photometry are correct. The systematic term sets the bright end. The robust width describes the core of the distribution; the tails are heavier than Gaussian, with 1--7\,per\,cent of measurements more than $5\sigma$ from their star's fit (more for faint stars), spread evenly over exposures. We keep these measurements and flag stars where they are common (Section~\ref{sec:flags}). \todo{PM pull widths of clean Gaia stars in the final catalogue; and whether the excess scatter along the parallactic direction (Dec pulls $\sim$10--20\,per\,cent above RA for bright stars) needs its own term.}
 
-We fit only sources classified as point sources (Tractor \texttt{TYPE = PSF}). This includes Gaia stars, which we use for validation, as well as fainter point sources not detected by Gaia. For a fit to be meaningful, a star must have enough measurements spread over a long enough time baseline. We require
-\begin{itemize}
-    \item at least $N_{\min} = 5$ measurements, and
-    \item a time baseline $t_{\max} - t_{\min} \geq 180$\,d.
-\end{itemize}
-The baseline requirement matters in practice. In a small number of bricks, every star has a baseline of only $\sim\!30$--50\,d, compared with $\sim\!1200$--1800\,d in typical bricks. Fits in such bricks are numerically stable but give proper motions dominated by noise, some exceeding $10^4$\,mas\,yr$^{-1}$. The baseline requirement rejects all of these fits, while removing only $\sim\!2$--4\,per\,cent of fits in the typical bricks we tested \todo{re-measure over the full sample}. As a safeguard against numerically degenerate design matrices, we also reject fits whose condition number exceeds $10^8$.
+This test also revealed a problem in the input uncertainties: forced photometry produced before September 2026 divided the declination inverse variance by $\cos^2\delta$, as is appropriate only for right ascension, making declination uncertainties too small by a factor $\cos\delta$ (2.4 at $\delta = -65\degr$). It was fixed in \emph{legacypipe} (commit \texttt{7aece15}), with a header keyword marking corrected files. For inputs produced earlier, identified by that keyword or by their creation date, we multiply the declination inverse variance by $\cos^2\delta$. With this correction the faint-star pulls are independent of declination, and equal in both coordinates.
 
-Each source receives a flag \texttt{pm\_flag}: $1$ if both models were fit successfully, $0$ if a fit was attempted but failed or was rejected by the cuts above, and $-1$ for non-point sources, for which no fit was attempted.
+\subsection{Measurements used, and quality flags} \label{sec:flags}
+
+We fit every source classified as a point source (Tractor \texttt{TYPE = PSF}). This includes Gaia stars, which we use for validation, as well as fainter point sources not detected by Gaia. Our approach is to use only what the inputs trust, and to flag rather than remove what may be unreliable.
+
+\paragraph*{Measurements.} A measurement enters a star's fit only if the forced photometry measured it: it must have a positive inverse variance in both coordinates and a non-zero fitted offset. In a few per cent of epochs the forced photometry reports an uncertainty but no measured offset \todo{fraction in the final sample}. These epochs carry no positional information, and including them would pull the fit towards zero motion, so we exclude them. No measurement is rejected for its residual: measurements far from the fit are kept, and counted (see \texttt{BAD\_EPOCHS} below).
+
+\paragraph*{When no fit is made.} The five-parameter model needs at least three measurements ($2N \geq 5$ equations), with distinct epochs. We therefore attempt a fit only for stars with $N \geq 3$ measured epochs and a non-zero time baseline, and we treat a fit as failed if its design matrix has a condition number above $10^8$ (e.g.\ when all epochs fall on very few nights). These are the only cases in which a point source has no proper motion in the catalogue.
+
+\paragraph*{Quality flags.} Every other condition that can make a proper motion unreliable is recorded in a bitmask, \texttt{pm\_quality} (Table~\ref{tab:pm_quality}), and the star keeps its fit. Throughout this paper we use only \emph{clean} stars, those with $\texttt{pm\_quality} = 0$; users of the catalogue can choose their own selection. The thresholds were set by comparing our proper motions of Gaia stars with Gaia's. Among stars with fewer than 10 measured epochs, or a baseline shorter than two years, 10 and 26\,per\,cent respectively differ from Gaia by more than 30\,mas\,yr$^{-1}$, compared with 0.13\,per\,cent of clean stars \todo{re-measure on the final catalogue}. For bad epochs, about 1--7\,per\,cent of all measurements lie more than $5\sigma$ from their star's fit, spread evenly over exposures, so flagging any star with a single such epoch would mostly flag stars with many epochs. Flagging stars for which at least 10\,per\,cent of epochs are bad flags 4.7\,per\,cent of clean Gaia stars, yet catches 89\,per\,cent of those differing from Gaia by more than 30\,mas\,yr$^{-1}$.
+
+\begin{table*}
+    \centering
+    \caption{Bits of the quality bitmask \texttt{pm\_quality}. A proper motion with $\texttt{pm\_quality} = 0$ is \emph{clean}; all figures in this paper use clean stars only. Measured epochs are those with a positive inverse variance in both coordinates and a non-zero fitted offset. Maskbits are those of the Legacy Surveys Tractor catalogue.}
+    \label{tab:pm_quality}
+    \begin{tabular}{rlp{11.5cm}}
+        \hline
+        Bit value & Name & Condition \\
+        \hline
+        1  & \texttt{FEW\_EPOCHS}     & fewer than 10 measured epochs \\
+        2  & \texttt{SHORT\_BASELINE} & measured epochs span less than 730\,d \\
+        4  & \texttt{NO\_COLOUR}      & no $g-i$ colour, measured or predicted from $g-z$ (Section~\ref{sec:dcr}), so no DCR or lateral-colour correction was applied \\
+        8  & \texttt{BRIGHT}          & on or near a bright star: maskbits \texttt{BRIGHT} or \texttt{MEDIUM} \\
+        16 & \texttt{SATURATED}       & saturated in any band: maskbits \texttt{SATUR\_G}, \texttt{SATUR\_R}, \texttt{SATUR\_I} or \texttt{SATUR\_Z} \\
+        32 & \texttt{FIT\_FAILED}     & no fit: fewer than 3 measured epochs, zero baseline, or a design matrix with condition number $> 10^8$ \\
+        64 & \texttt{BAD\_EPOCHS}     & at least 10\,per\,cent of the measured epochs lie more than $5\sigma$ from the fit, in right ascension or declination (residuals of the five-parameter fit; four-parameter if it failed). These epochs are kept in the fit \\
+        \hline
+    \end{tabular}
+\end{table*}
+
+The catalogue also keeps the simpler flag \texttt{pm\_flag}: $1$ if both models were fitted, $0$ if a fit was attempted but failed, and $-1$ for sources that are not point sources, for which no fit was attempted.
+
+\subsection{Catalogue contents} \label{sec:columns}
+
+The catalogue is the Tractor catalogue of each brick, with every original column unchanged, plus the columns listed in Table~\ref{tab:columns}. Proper motions in right ascension include the $\cos\delta$ factor. Positions are given at each star's own reference epoch \texttt{ref\_mjd} and stored in double precision. The header of each file records the settings that produced it: the systematic error per band (\texttt{SIGSYS\_G}, \texttt{SIGSYS\_R}, \texttt{SIGSYS\_I}, \texttt{SIGSYS\_Z}), the bad-epoch threshold and fraction (\texttt{BADNSIG}, \texttt{BADFRAC}), and the declination-uncertainty correction applied to the input (\texttt{DECFIX}; Section~\ref{sec:pm_method}). \todo{Data release: where and in what form the catalogue is published.}
+
+\begin{table*}
+    \centering
+    \caption{Columns added to the Tractor catalogue. Each value column has a matching inverse-variance column with the suffix \texttt{\_ivar}. For Gaia stars, the proper motions and parallax are absolute: the Gaia DR3 values are added to our fitted offsets from them (Section~\ref{sec:pm_method}).}
+    \label{tab:columns}
+    \begin{tabular}{llp{11cm}}
+        \hline
+        Column & Unit & Description \\
+        \hline
+        \texttt{pmra\_no\_plx}, \texttt{pmdec\_no\_plx} & mas\,yr$^{-1}$ & proper motion $(\mu_{\alpha*}, \mu_\delta)$, four-parameter fit (equation~\ref{eq:pm_model}) \\
+        \texttt{new\_ra\_no\_plx}, \texttt{new\_dec\_no\_plx} & deg & position at \texttt{ref\_mjd}, four-parameter fit \\
+        \texttt{pmra\_plx}, \texttt{pmdec\_plx} & mas\,yr$^{-1}$ & proper motion, five-parameter fit (equation~\ref{eq:plx_model}) \\
+        \texttt{parallax\_new} & mas & parallax $\varpi$, five-parameter fit \\
+        \texttt{new\_ra\_plx}, \texttt{new\_dec\_plx} & deg & position at \texttt{ref\_mjd}, five-parameter fit \\
+        \texttt{ref\_mjd} & d & reference epoch $t_{\rm ref}$ (MJD): the inverse-variance-weighted mean epoch of the star's measurements \\
+        \texttt{pm\_flag} & -- & $1$ both fits succeeded; $0$ fit attempted but failed; $-1$ not a point source (no fit attempted) \\
+        \texttt{pm\_quality} & -- & quality bitmask (Table~\ref{tab:pm_quality}); $0$ = clean \\
+        \texttt{pm\_n\_epochs} & -- & number of measured epochs used in the fit \\
+        \texttt{pm\_baseline\_days} & d & time spanned by the measured epochs \\
+        \texttt{pm\_n\_bad\_epochs} & -- & number of measured epochs more than $5\sigma$ from the fit (kept in the fit) \\
+        \texttt{pm\_colour\_source} & -- & $g-i$ colour used by the colour-dependent corrections: $1$ measured, $2$ predicted from $g-z$, $0$ none \\
+        \hline
+    \end{tabular}
+\end{table*}
 
 \todo{State the imaging date range (first/last epochs) used, and the distribution of $N$ and baseline (figure: footprint + $N$/baseline histograms).}
 
@@ -340,12 +442,7 @@ Each source receives a flag \texttt{pm\_flag}: $1$ if both models were fit succe
 
 
 
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{plots/ringmaps.png}
-    \caption{A visualisation of the CCD distortions caused by silicon tree rings, tape, etc. The axes are the pixels in the CCD. The left plot represents the shift in the x-direction, and the plot on the right represents the shift in the y-direction. The distortions shown are found by extracting the sources present in the Gaia catalogue per CCD per filter, then avergaing their shift between their positions in the Gaia catalogue and the Legacy catalogue.}
-    \label{fig:ringmaps}
-\end{figure}
+
 
 Our initial step involved creating a distortion map for each CCD in the DECam instrument. The distortion maps were generated by taking the median of the differences between Legacy Surveys measurements and their expected positions from the Gaia catalogue. Figure~\ref{fig:ringmaps} shows the maps of a single CCD for offsets along the CCD $x$ and $y$ axes. The tree rings appear as concentric arcs with amplitudes of $\sim\!10$--20\,mas; the edge columns and the features near the middle of the long edges are the known edge and tape-bump distortions. Figure~\ref{fig:ringmaps_fp} shows the maps of all CCDs at their positions in the focal plane. Each CCD has its own ring pattern, centred wherever the centre of the silicon wafer was, independent of the CCD's position in the focal plane; this is why the maps must be made per CCD rather than as a single focal-plane model.
 
