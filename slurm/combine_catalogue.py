@@ -22,7 +22,9 @@ import numpy as np
 import fitsio
 from concurrent.futures import ProcessPoolExecutor
 
-DEFAULT_OUT_ROOT = "/pscratch/sd/n/nelfalou/legacypm-catalogue"
+# v2 (2026-10-23): rerun with the two-line DCR, rebuilt CCD maps, refitted lateral model, per-band errors, Dec-ivar fix,
+# objid fix and quality flags. v1 (the Oct 2026 run) stays in /pscratch/sd/n/nelfalou/legacypm-catalogue until checked.
+DEFAULT_OUT_ROOT = "/pscratch/sd/n/nelfalou/legacypm-catalogue-v2"
 
 OBJ_COLS = ['brickid', 'brickname', 'objid', 'type', 'ra', 'dec', 'ra_ivar', 'dec_ivar', 'ref_cat', 'ref_id',
             'ref_epoch', 'flux_g', 'flux_r', 'flux_i', 'flux_z', 'flux_ivar_g', 'flux_ivar_r', 'flux_ivar_i',
@@ -41,6 +43,9 @@ EPOCH_COLS = ['brickid', 'brickname', 'objid', 'expnum', 'ccdname', 'filter', 'm
               'dcr_full_fit_x', 'dcr_full_fit_y', 'dcr_full_fit_dra', 'dcr_full_fit_ddec', 'dp1', 'colour_airmass',
               'rm_full_fit_x', 'rm_full_fit_y', 'rm_full_fit_dra', 'rm_full_fit_ddec',
               'lm_full_fit_x', 'lm_full_fit_y', 'lm_full_fit_dra', 'lm_full_fit_ddec']
+# total per-epoch ivars the PM fit used (systematic error added, Dec-ivar bug corrected); outputs from 2026-10-23 on
+EPOCH_COLS_OPTIONAL = ['full_fit_dra_ivar_total', 'full_fit_ddec_ivar_total', 'full_fit_radec_cov_total',
+                       'zp_full_fit_dra', 'zp_full_fit_ddec']
 
 
 def parse_degrees(items):
@@ -62,7 +67,9 @@ def read_brick(args):
         have = set(fitsio.FITS(tf)[1].get_colnames())   # quality columns exist from 2026-10-23 on
         keyed = 'OBJKEY' in fitsio.read_header(tf, 1)   # pipeline matched on (brickid, objid): no clashes possible
         T = fitsio.read(tf, columns=[c for c in OBJ_COLS + QUALITY_COLS if c in have])
-        F = fitsio.read(os.path.join(deg_dir, f"forced-{brick}.fits"), columns=EPOCH_COLS)
+        ff = os.path.join(deg_dir, f"forced-{brick}.fits")
+        fhave = set(fitsio.FITS(ff)[1].get_colnames())
+        F = fitsio.read(ff, columns=EPOCH_COLS + [c for c in EPOCH_COLS_OPTIONAL if c in fhave])
     except Exception as e:
         return brick, None, f"{type(e).__name__}: {e}"
     # Tractor catalogues can have rows from neighbouring bricks appended at the end (e.g. large SGA galaxies), with

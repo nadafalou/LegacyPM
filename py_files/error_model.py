@@ -1,18 +1,41 @@
 """Per-epoch positional error model, used by the corrections and the PM fit (single place to change it).
 
-The forced photometry's statistical error underestimates the real scatter of bright stars, which levels off at a
-floor set by systematics (atmosphere, residual distortions). The total error of each epoch is
-    sigma_total = sqrt(sigma_stat^2 + SIGMA_SYS_MAS[band]^2)
-with sigma_stat from the forced photometry (full_fit_dra_ivar, full_fit_ddec_ivar; arcsec^-2).
-SIGMA_SYS_MAS per band (Nada, 2026-10-23): fitted in run/pull-vs-mag.ipynb so that per-epoch pulls of clean objects
-have unit robust width at every magnitude (slice 000, Dec errors corrected for the cos(Dec) problem); the same fit
-gives a scale factor k = 1 on sigma_stat, i.e. the statistical errors are right. Replaces a single 20 mas (and before
-that 14.8 mas).
+Since 2026-10-26 (Nada: refit sigma_sys on v2 + an extra error along the refraction direction), each epoch's error is
+a 2x2 covariance in (RA*, Dec). With p the unit vector along the parallactic (refraction) direction and q across it:
+    across (q):  sigma^2 = sigma_stat,q^2 + (sigma_sys,b + sigma_sys_k,b tan z)^2
+    along  (p):  sigma^2 = sigma_stat,p^2 + (sigma_sys,b + sigma_sys_k,b tan z)^2 + (along_a,b + along_k,b tan z)^2
+i.e. C = C_stat + sigma_iso^2 I + (a + k tan z)^2 p p^T (the isotropic part also grows with airmass: image motion from
+turbulence; the along part is the extra scatter in the refraction direction), with p = (-sin pa, -cos pa) in (RA*, Dec) (CCD x = -Dec,
+y = +RA; same convention as brick_DCR). sigma_stat from the forced photometry (full_fit_dra_ivar, full_fit_ddec_ivar,
+the latter corrected for the legacypipe cos^2(Dec) bug, below). The along term describes random per-epoch scatter that
+grows with airmass (turbulence / refraction / PSF elongation / SED-level DCR residuals); it lands mostly in Dec from CTIO.
+Parameters per band: py_files/error_model.json, fitted by run/error-model-fit.ipynb on v2 per-epoch residuals (pulls of
+unit width across and along, at every magnitude and tan z). Without that file: the v1-era isotropic values below
+(sigma_sys g 16, r 12, i 12, z 10 mas from run/pull-vs-mag.ipynb on slice 000; 2026-10-23), no along term.
 """
+import os
+import json
 import numpy as np
 
-SIGMA_SYS_MAS = {'g': 16., 'r': 12., 'i': 12., 'z': 10.}
+_MODEL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'error_model.json')
+if os.path.exists(_MODEL_FILE):
+    with open(_MODEL_FILE) as _f:
+        ERROR_MODEL = json.load(_f)
+else:
+    ERROR_MODEL = {'bands': {b: {'sigma_sys': s, 'along_a': 0., 'along_k': 0.}
+                             for b, s in {'g': 16., 'r': 12., 'i': 12., 'z': 10.}.items()}, 'default_band': 'g'}
+SIGMA_SYS_MAS = {b: p['sigma_sys'] for b, p in ERROR_MODEL['bands'].items()}
+# short ID of the parameters, recorded in headers (ERRMODEL) so reruns can tell which model made a catalogue
+ERROR_MODEL_ID = __import__('hashlib').md5(json.dumps(ERROR_MODEL['bands'], sort_keys=True).encode()).hexdigest()[:8]
 SIGMA_SYS_DEFAULT_MAS = max(SIGMA_SYS_MAS.values())   # any other band
+
+
+def _per_band(band, key, default):
+    band = np.char.strip(np.asarray(band).astype(str))
+    out = np.full(band.shape, default, dtype=float)
+    for b, p in ERROR_MODEL['bands'].items():
+        out[band == b] = p.get(key, default)
+    return out
 
 
 def sigma_sys(band):
@@ -43,7 +66,42 @@ def total_error(ivar, band):
 
 def header_cards():
     """FITS header cards recording the model: (key, value, comment)."""
-    return [(f'SIGSYS_{b.upper()}', s, f'systematic per-epoch error, {b} band (mas)') for b, s in SIGMA_SYS_MAS.items()]
+    cards = [('ERRMODEL', ERROR_MODEL_ID, 'error-model parameters ID (error_model.json)')]
+    for b, p in ERROR_MODEL['bands'].items():
+        B = b.upper()
+        cards += [(f'SIGSYS_{B}', p['sigma_sys'], f'systematic per-epoch error, {b} band (mas)'),
+                  (f'SIGSYK_{B}', p.get('sigma_sys_k', 0.), f'systematic error growth with tan z, {b} (mas)'),
+                  (f'ALONGA_{B}', p['along_a'], f'extra error along refraction dir., {b}: a (mas)'),
+                  (f'ALONGK_{B}', p['along_k'], f'extra error along refraction dir., {b}: k (mas/tanz)')]
+    return cards
+
+
+def epoch_geometry(ra, dec, mjd, exptime):
+    """(pa, tanz) per epoch, exactly as brick_DCR computes them (mid-exposure hour angle at CTIO)."""
+    try:
+        from . import dcr_geometry
+    except ImportError:
+        import dcr_geometry
+    ha = dcr_geometry.hour_angle(np.asarray(ra, float), np.asarray(mjd, float) + 0.5 * np.asarray(exptime, float) / 86400.)
+    am, pa = dcr_geometry.parallactic(np.asarray(dec, float), ha)
+    return np.asarray(pa, float), np.sqrt(np.clip(np.asarray(am, float)**2 - 1, 0, None))
+
+
+def epoch_covariance(ivar_ra, ivar_dec, band, pa, tanz):
+    """Per-epoch total error covariance in (RA*, Dec), arcsec^2: (var_ra, var_dec, cov). ivar_dec must already be
+    corrected for the cos^2(Dec) input bug (corrected_ddec_ivar). Epochs with a statistical ivar <= 0 get inf
+    variances and zero covariance."""
+    ivar_ra, ivar_dec = np.asarray(ivar_ra, float), np.asarray(ivar_dec, float)
+    ok = (ivar_ra > 0) & (ivar_dec > 0)
+    tanz = np.asarray(tanz, float)
+    s2 = ((_per_band(band, 'sigma_sys', SIGMA_SYS_DEFAULT_MAS) + _per_band(band, 'sigma_sys_k', 0.) * tanz) / 1000.)**2
+    e2 = ((_per_band(band, 'along_a', 0.) + _per_band(band, 'along_k', 0.) * np.asarray(tanz, float)) / 1000.)**2
+    pr, pd = -np.sin(pa), -np.cos(pa)
+    with np.errstate(divide='ignore'):
+        var_ra = np.where(ok, 1. / np.where(ok, ivar_ra, 1.) + s2 + e2 * pr**2, np.inf)
+        var_dec = np.where(ok, 1. / np.where(ok, ivar_dec, 1.) + s2 + e2 * pd**2, np.inf)
+    cov = np.where(ok, e2 * pr * pd, 0.)
+    return var_ra, var_dec, cov
 
 
 # The forced photometry divided full_fit_ddec_ivar by cos^2(Dec) (like the RA term, wrongly) until legacypipe commit

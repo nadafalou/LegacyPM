@@ -12,9 +12,11 @@ try:
 except ImportError:
     from colours import g_minus_i
 try:
-    from .error_model import total_ivar, header_cards, corrected_ddec_ivar
+    from .error_model import header_cards, corrected_ddec_ivar, epoch_geometry, epoch_covariance
+    from . import zeropoints
 except ImportError:
-    from error_model import total_ivar, header_cards, corrected_ddec_ivar
+    from error_model import header_cards, corrected_ddec_ivar, epoch_geometry, epoch_covariance
+    import zeropoints
 
 logging.basicConfig(
     level=logging.INFO,
@@ -147,6 +149,57 @@ def make_splines(lateralmaps):
     return tweaks
 
 
+TOTAL_ERROR_COLUMNS = [('full_fit_dra_ivar_total', 'arcsec^(-2)'), ('full_fit_ddec_ivar_total', 'arcsec^(-2)'),
+                       ('full_fit_radec_cov_total', 'arcsec^2')]
+
+
+def add_total_errors(hdul):
+    """Write (or overwrite) the total per-epoch error columns and header cards of a corrected forced table:
+    full_fit_{dra,ddec}_ivar_total = 1 / marginal variance in RA* / Dec, full_fit_radec_cov_total = RA-Dec covariance
+    (error_model.epoch_covariance: statistical + sigma_sys + the along-refraction term). The input Dec ivar is first
+    corrected for the legacypipe cos^2(Dec) bug if this brick's input has it."""
+    D = hdul[1].data
+    ivar_dec, dec_cards = corrected_ddec_ivar(D.full_fit_dra_ivar, D.full_fit_ddec_ivar, D.dec,
+                                              hdul[1].header.get('INPDATE'),
+                                              hdul[1].header.get('DDIVFIX', hdul[0].header.get('DDIVFIX')))
+    pa, tanz = epoch_geometry(D.ra, D.dec, D.mjd, D.exptime)
+    var_ra, var_dec, cov = epoch_covariance(D.full_fit_dra_ivar, ivar_dec, D.filter, pa, tanz)
+    with np.errstate(divide='ignore'):
+        values = [np.where(np.isfinite(var_ra), 1. / var_ra, 0.), np.where(np.isfinite(var_dec), 1. / var_dec, 0.), cov]
+    names = hdul[1].columns.names
+    new = [fits.Column(name=name, format='E', unit=unit, array=arr)
+           for (name, unit), arr in zip(TOTAL_ERROR_COLUMNS, values) if name not in names]
+    for (name, unit), arr in zip(TOTAL_ERROR_COLUMNS, values):
+        if name in names:
+            hdul[1].data[name] = arr
+    if new:
+        # rebuild the table HDU: adding columns to an existing HDU in place can leave the header and the data out of
+        # step when it is written (2026-10-26: that wrote headers listing a column the data block lacked)
+        hdr = hdul[1].header.copy()
+        hdul[1] = fits.BinTableHDU.from_columns(hdul[1].columns + fits.ColDefs(new), header=hdr)
+    for key, val, comment in header_cards() + dec_cards:   # error-model parameters; Dec-ivar diagnosis
+        hdul[1].header[key] = (val, comment)
+
+
+def update_total_errors(path):
+    """Recompute the total-error columns and the exposure-CCD zero-point-corrected positions (zp_full_fit_*) of an
+    already corrected forced file in place (lm_ positions untouched); used to apply a new error model / zero-point
+    table without rerunning the corrections (run_bricks.py --redo-errors)."""
+    with fits.open(path) as h:
+        hdul = fits.HDUList([fits.PrimaryHDU(data=h[0].data, header=h[0].header.copy()),
+                             fits.BinTableHDU(data=h[1].data.copy(), header=h[1].header.copy())])
+    n_rows, cols_before = len(hdul[1].data), list(hdul[1].columns.names)
+    add_total_errors(hdul)
+    zeropoints.add_zp_columns(hdul)
+    tmp = path + ".tmp"
+    hdul.writeto(tmp, overwrite=True)
+    with fits.open(tmp) as t:   # read back before replacing the original
+        assert len(t[1].data) == n_rows and all(c in t[1].columns.names for c in cols_before), "rewrite check failed"
+        assert all(c in t[1].columns.names for c, _ in TOTAL_ERROR_COLUMNS), "rewrite check failed"
+        _ = t[1].data['full_fit_radec_cov_total'][:1]
+    os.replace(tmp, path)
+
+
 def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model):
     logger.info(f"Starting correction for brick: {filename}")
     start_time = time.time()
@@ -204,19 +257,10 @@ def create_brick_corrected_data(filename, corr_dir, old_dir, tractor_dir, model)
         corr_table[1].data["lm_full_fit_dra"][J] = corr_table[1].data["rm_full_fit_dra"][J] + dRA
         corr_table[1].data["lm_full_fit_ddec"][J] = corr_table[1].data["rm_full_fit_ddec"][J] + dDEC
 
-    # total per-epoch inverse variance of the corrected positions: statistical + systematic floor (error_model.py);
-    # this is what the PM fit uses
-    # (the input Dec ivar is first corrected for the legacypipe cos^2(Dec) bug if this brick has it; error_model.py)
-    D = corr_table[1].data
-    stat_ivar = {'dra': D.full_fit_dra_ivar}
-    stat_ivar['ddec'], dec_cards = corrected_ddec_ivar(D.full_fit_dra_ivar, D.full_fit_ddec_ivar, D.dec,
-                                                       corr_table[1].header.get('INPDATE'),
-                                                       corr_table[1].header.get('DDIVFIX', corr_table[0].header.get('DDIVFIX')))
-    for ax in ('dra', 'ddec'):
-        corr_table[1].columns.add_col(fits.Column(name=f"full_fit_{ax}_ivar_total", format='E', unit='arcsec^(-2)',
-                                                  array=total_ivar(stat_ivar[ax], D.filter)))
-    for key, val, comment in header_cards() + dec_cards:   # systematic error per band; Dec-ivar diagnosis
-        corr_table[1].header[key] = (val, comment)
+    # total per-epoch errors of the corrected positions (error_model.py), and exposure-CCD zero points
+    # (zeropoints.py; zp_full_fit_*): what the PM fit uses
+    add_total_errors(corr_table)
+    zeropoints.add_zp_columns(corr_table)
 
     output_path = f"{ corr_dir }{ filename }"
     tmp_path = output_path + ".tmp"

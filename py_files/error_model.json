@@ -1,0 +1,41 @@
+{
+ "description": "Per-epoch error: across the parallactic direction sigma^2 = sigma_stat^2 + (sigma_sys + sigma_sys_k tan z)^2; along it the same + (along_a + along_k tan z)^2 (mas). p = (-sin pa, -cos pa) in (RA*, Dec).",
+ "bands": {
+  "g": {
+   "sigma_sys": 6.5,
+   "sigma_sys_k": 1.5,
+   "along_a": 1.0,
+   "along_k": 6.0
+  },
+  "r": {
+   "sigma_sys": 5.5,
+   "sigma_sys_k": 2.0,
+   "along_a": 0.0,
+   "along_k": 6.5
+  },
+  "i": {
+   "sigma_sys": 5.5,
+   "sigma_sys_k": 1.5,
+   "along_a": 1.0,
+   "along_k": 3.5
+  },
+  "z": {
+   "sigma_sys": 5.5,
+   "sigma_sys_k": 2.0,
+   "along_a": 0.0,
+   "along_k": 5.0
+  }
+ },
+ "default_band": "g",
+ "fit": {
+  "notebook": "run/error-model-fit.ipynb",
+  "date": "2026-10-26",
+  "slices": [
+   "000",
+   "040"
+  ],
+  "fraction": 0.25,
+  "n_epochs": 52795663,
+  "data": "v2 per-epoch residuals of clean point sources"
+ }
+}

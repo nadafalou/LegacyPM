@@ -4,7 +4,7 @@ For every PSF object of a brick: the straight-line (4-parameter, no parallax) fi
 lm_full_fit_dra/ddec over its measured epochs, weighted with the pipeline's errors (error_model.total_error). That
 fit splits into independent weighted line fits in RA and in Dec, so it is done for all objects at once with bincounts.
 Kept per epoch: the residuals (mas), the statistical errors (mas), the band and the object's magnitude in that band,
-the number of epochs, the epoch's Dec, and whether the object is clean (pm_quality == 0 apart from BAD_EPOCHS) and a Gaia star.
+the number of epochs, the epoch's Dec, parallactic angle and tan z, and whether the object is clean (pm_quality == 0 apart from BAD_EPOCHS) and a Gaia star.
 Pulls for any error model sigma^2 = (k sigma_stat)^2 + sigma_sys^2 are then residual / sigma * sqrt(N / (N - 2)).
 
   python pm_pulls.py 000 --fraction 0.25 --workers 64     # writes <out-root>/combined/pulls-000-0.25.npz
@@ -21,11 +21,18 @@ except ImportError:
     from colours import g_minus_i, COLOUR_SOURCE_NONE
 try:
     from .error_model import total_error, corrected_ddec_ivar
+    from . import dcr_geometry
 except ImportError:
     from error_model import total_error, corrected_ddec_ivar
+    import dcr_geometry
+try:
+    from . import zeropoints
+except ImportError:
+    import zeropoints
+USE_ZP = os.path.exists(zeropoints.DEFAULT_TABLE)
 
-DEFAULT_OUT_ROOT = "/pscratch/sd/n/nelfalou/legacypm-catalogue"
-EPOCH_COLS = ['brickid', 'objid', 'filter', 'mjd', 'dec', 'expnum', 'ccdname', 'full_fit_dra', 'full_fit_dra_ivar', 'full_fit_ddec_ivar',
+DEFAULT_OUT_ROOT = "/pscratch/sd/n/nelfalou/legacypm-catalogue-v2"
+EPOCH_COLS = ['brickid', 'objid', 'filter', 'mjd', 'exptime', 'ra', 'dec', 'expnum', 'ccdname', 'full_fit_dra', 'full_fit_dra_ivar', 'full_fit_ddec_ivar',
               'lm_full_fit_dra', 'lm_full_fit_ddec']
 OBJ_COLS = ['brickid', 'objid', 'type', 'ref_epoch', 'flux_g', 'flux_r', 'flux_i', 'flux_z', 'maskbits']
 MASKBITS_BRIGHT = (1 << 1) | (1 << 11)
@@ -78,8 +85,11 @@ def brick_residuals(args):
     ivar['dec'], cards = corrected_ddec_ivar(F['full_fit_dra_ivar'], F['full_fit_ddec_ivar'], F['dec'],
                                              inpdate or hdr.get('INPDATE'), hdr.get('DDIVFIX', hdr0.get('DDIVFIX')))
     out['decfix'] = np.full(len(F), dict((k, v) for k, v, _ in cards)['DECFIX'])
-    for ax, dcol in (('ra', 'lm_full_fit_dra'), ('dec', 'lm_full_fit_ddec')):
-        out[f'res_{ax}'] = (line_residuals(row, t, F[dcol].astype(float), total_error(ivar[ax], band), n_obj) * 1000).astype(np.float32)
+    # offsets after the exposure-CCD zero points (zeropoints.py), looked up for files made before they existed
+    zr, zd = zeropoints.lookup(F['expnum'], F['ccdname']) if USE_ZP else (0., 0.)
+    pos = {'ra': F['lm_full_fit_dra'].astype(float) - zr / 1000., 'dec': F['lm_full_fit_ddec'].astype(float) - zd / 1000.}
+    for ax in ('ra', 'dec'):
+        out[f'res_{ax}'] = (line_residuals(row, t, pos[ax], total_error(ivar[ax], band), n_obj) * 1000).astype(np.float32)
         out[f'sig_{ax}'] = (1000 / np.sqrt(ivar[ax])).astype(np.float32)
     flux = np.full(len(F), np.nan)
     for b in BANDS:
@@ -91,6 +101,12 @@ def brick_residuals(args):
     has_colour = g_minus_i(T['flux_g'], T['flux_i'], T['flux_z'])[1] != COLOUR_SOURCE_NONE
     clean = ((n_ep >= 10) & (last - first >= 730) & has_colour
              & ((mb & (MASKBITS_BRIGHT | MASKBITS_SATURATED)) == 0))
+    # observing geometry, as brick_DCR computes it: the refraction (parallactic) direction on the sky is
+    # p = (-sin pa, -cos pa) in (RA*, Dec) (CCD x = -Dec, y = +RA), and tan z
+    ha = dcr_geometry.hour_angle(F['ra'], F['mjd'] + 0.5 * F['exptime'] / 86400.)
+    am, pa = dcr_geometry.parallactic(F['dec'], ha)
+    out['pa'] = np.asarray(pa, dtype=np.float32)
+    out['tanz'] = np.sqrt(np.clip(np.asarray(am)**2 - 1, 0, None)).astype(np.float32)
     out['expnum'] = F['expnum'].astype(np.int32)
     out['dec'] = F['dec'].astype(np.float32)
     out.update(band=np.array([BANDS.find(b) for b in band], dtype=np.int8), mag=mag.astype(np.float32),

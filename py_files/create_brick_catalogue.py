@@ -13,9 +13,9 @@ try:
 except ImportError:
     from colours import g_minus_i, COLOUR_SOURCE_NONE
 try:
-    from .error_model import total_error, header_cards, corrected_ddec_ivar
+    from .error_model import header_cards, corrected_ddec_ivar, epoch_geometry, epoch_covariance
 except ImportError:
-    from error_model import total_error, header_cards, corrected_ddec_ivar
+    from error_model import header_cards, corrected_ddec_ivar, epoch_geometry, epoch_covariance
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,59 +60,45 @@ MASKBITS_SATURATED = (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14)
 BRICK_WARN_INSUFFICIENT_FRACTION = 0.5
 
 
-def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B):
-    A = np.zeros((2 * N, 5))
-    A[:N, 0] = plx_dra / dra_error
-    A[N:, 0] = plx_ddec / ddec_error
-    A[:N, 1] = dt / dra_error
-    A[N:, 2] = dt / ddec_error
-    A[:N, 3] = 1 / dra_error  # offset columns must be weighted like the data (B = d/sigma)
-    A[N:, 4] = 1 / ddec_error
-
+def _wls(A_ra, A_dec, d_ra, d_dec, s_ra, s_dec, rho):
+    """Weighted least squares with a 2x2 error covariance per epoch (RA*, Dec; correlation rho). Each epoch's pair of
+    equations is whitened with the Cholesky factor of its covariance: RA rows / s_ra; Dec rows minus the part
+    predicted by RA, / (s_dec sqrt(1 - rho^2)). With rho = 0 this is the usual independent weighting.
+    Returns (X, variances, chi) in arcsec units; chi = whitened residuals, RA epochs then (conditional) Dec epochs."""
+    beta = rho * s_dec / s_ra
+    gamma = s_dec * np.sqrt(1 - rho**2)
+    A = np.vstack([A_ra / s_ra[:, None], (A_dec - beta[:, None] * A_ra) / gamma[:, None]])
+    B = np.concatenate([d_ra / s_ra, (d_dec - beta * d_ra) / gamma])
     cond = np.linalg.cond(A)
     if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
         raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
-
-    X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
-    chi = B - A @ X  # normalised residuals, RA epochs then Dec epochs
-    X = X * 1000 # arcsec to mas
-    # parallax, pmra_plx, pmdec_plx, ra_offset_plx, dec_offset_plx = X[0], X[1], X[2], X[3], X[4] # mas, mas/yr, mas/yr
-    # ra_offset_plx = ra_offset_plx / 1000 # to arcsec
-    # dec_offset_plx = dec_offset_plx / 1000 # to arcsec
-
-    cov_matrix = np.linalg.inv(A.T @ A)
-    variances = np.diag(cov_matrix) * 1000**2
-    # parallax_var, pmra_plx_var, pmdec_plx_var, ra_offset_plx_var, dec_offset_plx_var = variances
-
-    return X, variances, chi  # all in mas; chi dimensionless
+    X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None)
+    chi = B - A @ X
+    variances = np.diag(np.linalg.inv(A.T @ A))
+    return X, variances, chi
 
 
-def pm_lsq(N, dt, dra_error, ddec_error, B):
-    A = np.zeros((2 * N, 4))
-    A[:N, 0] = dt / dra_error
-    A[N:, 1] = dt / ddec_error
-    A[:N, 2] = 1 / dra_error  # offset columns must be weighted like the data (B = d/sigma)
-    A[N:, 3] = 1 / ddec_error
-
-    cond = np.linalg.cond(A)
-    if not np.isfinite(cond) or cond > MAX_COND_NUMBER:
-        raise np.linalg.LinAlgError(f"ill-conditioned design matrix (cond={cond:.3g} > {MAX_COND_NUMBER:.3g})")
-
-    X, resid, rank, s = np.linalg.lstsq(A, B, rcond=None) # in arcsec
-    chi = B - A @ X  # normalised residuals, RA epochs then Dec epochs
-    X = X * 1000
-    # pmra, pmdec, ra_offset, dec_offset = X[0], X[1], X[2] # mas, mas/yr, mas/yr
-
-    cov_matrix = np.linalg.inv(A.T @ A)
-    variances = np.diag(cov_matrix) * 1000**2
-    # pmra_var, pmdec_var, ra_offset_var, dec_offset_var = variances
-
-    return X, variances, chi  # all in mas; chi dimensionless
+def pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra, ddec, dra_error, ddec_error, rho):
+    """5-parameter fit: parallax, pmra, pmdec, RA offset, Dec offset (mas, mas/yr)."""
+    z, o = np.zeros(N), np.ones(N)
+    A_ra = np.column_stack([plx_dra, dt, z, o, z])
+    A_dec = np.column_stack([plx_ddec, z, dt, z, o])
+    X, variances, chi = _wls(A_ra, A_dec, dra, ddec, dra_error, ddec_error, rho)
+    return X * 1000, variances * 1000**2, chi   # mas; chi dimensionless
 
 
-def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
+def pm_lsq(N, dt, dra, ddec, dra_error, ddec_error, rho):
+    """4-parameter fit: pmra, pmdec, RA offset, Dec offset (mas, mas/yr)."""
+    z, o = np.zeros(N), np.ones(N)
+    A_ra = np.column_stack([dt, z, o, z])
+    A_dec = np.column_stack([z, dt, z, o])
+    X, variances, chi = _wls(A_ra, A_dec, dra, ddec, dra_error, ddec_error, rho)
+    return X * 1000, variances * 1000**2, chi
+
+
+def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec, rho=None):
     """Fit one object. mjd, dra, ddec (arcsec) and the errors are that object's per-epoch measurements;
-    ra, dec its Tractor position (deg). Also returns n_bad, the number of epochs more than BAD_EPOCH_NSIGMA from
+    ra, dec its Tractor position (deg); rho the per-epoch RA-Dec error correlation (default 0). Also returns n_bad, the number of epochs more than BAD_EPOCH_NSIGMA from
     the fit in RA or Dec (5-parameter fit; 4-parameter if that failed; 0 if neither fit)."""
     ref_year = 0 # bc dra, ddec around 0, not actual ra, decs
     N = len(mjd)
@@ -129,15 +115,15 @@ def calculate_pm(mjd, dra, ddec, dra_error, ddec_error, ra, dec):
     plx_dra = (plx_ra - ra) * np.cos(np.deg2rad(dec)) * 3600
     plx_ddec = (plx_dec - dec) * 3600
     dt = (mjd - ref_mjd) / DAYSPERYEAR
-    B = np.append(dra / dra_error, ddec / ddec_error)
+    rho = np.zeros(N) if rho is None else np.asarray(rho, float)
 
     try:
-        X_plx, variances_plx, chi_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra_error, ddec_error, B)
+        X_plx, variances_plx, chi_plx = pm_lsq_plx(N, dt, plx_dra, plx_ddec, dra, ddec, dra_error, ddec_error, rho)
     except np.linalg.LinAlgError as err:
         X_plx, variances_plx, chi_plx = None, None, None
 
     try:
-        X, variances, chi = pm_lsq(N, dt, dra_error, ddec_error, B)
+        X, variances, chi = pm_lsq(N, dt, dra, ddec, dra_error, ddec_error, rho)
     except np.linalg.LinAlgError as err:
         X, variances, chi = None, None, None
 
@@ -213,17 +199,25 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         with np.errstate(divide='ignore'):
             dra_error = np.where(tot_ra > 0, 1 / np.sqrt(np.where(tot_ra > 0, tot_ra, 1)), np.inf)
             ddec_error = np.where(tot_dec > 0, 1 / np.sqrt(np.where(tot_dec > 0, tot_dec, 1)), np.inf)
+        if 'full_fit_radec_cov_total' in fcols:   # along-refraction term correlates RA and Dec (error_model.py)
+            cov = np.asarray(forced_table[1].data.full_fit_radec_cov_total, dtype=float)
+            with np.errstate(all='ignore'):
+                rho = np.where(np.isfinite(dra_error * ddec_error), cov / (dra_error * ddec_error), 0.)
+        else:
+            rho = np.zeros(len(dra_error))
         hdr = forced_table[1].header   # the model the lateral step used (older files: one SIGSYS for all bands)
         sys_cards = [(k, hdr[k], c) for k, _, c in header_cards() if k in hdr] or \
                     [('SIGSYS', hdr.get('SIGSYS', 20.), 'systematic per-epoch error, all bands (mas)')]
-        sys_cards += [(k, hdr[k], hdr.comments[k]) for k in ('INPDATE', 'DDIVFIX', 'DECRATIO', 'DECFIX', 'DECBASIS') if k in hdr]
+        sys_cards += [(k, hdr[k], hdr.comments[k]) for k in ('INPDATE', 'DDIVFIX', 'DECRATIO', 'DECFIX', 'DECBASIS', 'ZPTABLE', 'ZPCORR') if k in hdr]
     else:
-        filt = forced_table[1].data.filter
-        dra_error = total_error(dra_ivar, filt)
-        ddec_fixed, dec_cards = corrected_ddec_ivar(dra_ivar, ddec_ivar, forced_table[1].data.dec,
-                                                    forced_table[1].header.get('INPDATE'),
+        Fd = forced_table[1].data
+        ddec_fixed, dec_cards = corrected_ddec_ivar(dra_ivar, ddec_ivar, Fd.dec, forced_table[1].header.get('INPDATE'),
                                                     forced_table[1].header.get('DDIVFIX', forced_table[0].header.get('DDIVFIX')))
-        ddec_error = total_error(ddec_fixed, filt)
+        pa, tanz = epoch_geometry(Fd.ra, Fd.dec, Fd.mjd, Fd.exptime)
+        var_ra, var_dec, cov = epoch_covariance(dra_ivar, ddec_fixed, Fd.filter, pa, tanz)
+        dra_error, ddec_error = np.sqrt(var_ra), np.sqrt(var_dec)
+        with np.errstate(all='ignore'):
+            rho = np.where(np.isfinite(dra_error * ddec_error), cov / (dra_error * ddec_error), 0.)
         sys_cards = header_cards() + dec_cards
 
     psf_mask = tractor_table[1].data.type == 'PSF'
@@ -252,8 +246,10 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
     t_key = (np.asarray(tractor_table[1].data.brickid).astype(np.int64) << 32) | \
             np.asarray(tractor_table[1].data.objid).astype(np.int64)
     f_mjd = np.asarray(F.mjd, dtype=float)
-    f_dra = np.asarray(F.full_fit_dra if original_data else F.lm_full_fit_dra)
-    f_ddec = np.asarray(F.full_fit_ddec if original_data else F.lm_full_fit_ddec)
+    # positions: after the exposure-CCD zero points (zp_full_fit_*, zeropoints.py) if present, else after lateral colour
+    stage = 'zp' if 'zp_full_fit_dra' in F.columns.names else 'lm'
+    f_dra = np.asarray(F.full_fit_dra if original_data else F[f'{stage}_full_fit_dra'])
+    f_ddec = np.asarray(F.full_fit_ddec if original_data else F[f'{stage}_full_fit_ddec'])
     f_raw_dra = np.asarray(F.full_fit_dra)
     # Only epochs the forced photometry actually measured: an error (ivar > 0) AND an offset. ~5% of epochs have
     # ivar > 0 but full_fit_dra == 0 (no offset measured); the correction steps already skip them, and after the
@@ -283,7 +279,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
             n_insufficient_data += 1
         try:
             X_plx, var_plx, X, var, rmjd, n_bad = calculate_pm(
-                f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][i], T['dec'][i]
+                f_mjd[rows], f_dra[rows], f_ddec[rows], dra_error[rows], ddec_error[rows], T['ra'][i], T['dec'][i], rho[rows]
             )
         except Exception as e:
             logger.warning(f"Error calculating PM for objid={objid}: {e}")
