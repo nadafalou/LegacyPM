@@ -12,6 +12,7 @@ import os
 import logging
 
 import numpy as np
+import fitsio
 from astrometry.util.fits import fits_table, merge_tables
 try:
     from .colours import g_minus_i, COLOUR_SOURCE_NONE
@@ -99,7 +100,10 @@ def load_catalogue(archive_dir, degrees=None, columns=_COLUMNS, n_workers=8):
 
 
 # Combined per-slice files written by slurm/combine_catalogue.py (see its docstring for what each holds).
-COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue/combined'
+# v2 (2026-10-25): the final run with all current corrections. Calibration fits (DCR model, colour fallback, CCD maps,
+# lateral model) were made from the v1 combined files and keep pointing there (V1_COMBINED_DIR) so they stay reproducible.
+COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/combined'
+V1_COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue/combined'
 
 
 def _degree_list(degrees):
@@ -111,6 +115,10 @@ def _degree_list(degrees):
     return out
 
 
+# columns quality_bits uses (the catalogue's pm_quality if present, else the ingredients to rebuild it)
+QUALITY_INPUT_COLUMNS = ['pm_quality', 'pm_flag', 'n_epochs', 'baseline_days', 'flux_g', 'flux_i', 'flux_z', 'maskbits']
+
+
 def load_combined(kind, degrees=('000-063',), combined_dir=COMBINED_DIR, columns=None):
     """Load and concatenate combined files of one kind ('pm', 'gaia-objects', 'gaia-epochs', 'bricks') for the
     given slices. Slices without a combined file yet are skipped (and listed). Returns a fits_table."""
@@ -118,7 +126,13 @@ def load_combined(kind, degrees=('000-063',), combined_dir=COMBINED_DIR, columns
     for deg in _degree_list(degrees):
         path = os.path.join(combined_dir, f"{kind}-{deg}.fits")
         if _is_complete(path):
-            tables.append(fits_table(path, columns=columns))
+            cols = columns
+            if columns is not None:
+                # always bring the columns clean_mask / quality_bits need, so a column list can't silently weaken
+                # the clean selection (2026-10-25: figures lost BAD_EPOCHS, BRIGHT, SATURATED, NO_COLOUR this way)
+                have = set(fitsio.FITS(path)[1].get_colnames())
+                cols = list(columns) + [c for c in QUALITY_INPUT_COLUMNS if c in have and c not in columns]
+            tables.append(fits_table(path, columns=cols))
         else:
             missing.append(deg)
     if not tables:
