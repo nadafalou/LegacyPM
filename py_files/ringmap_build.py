@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from py_files import dcr_geometry
 from py_files.dcr_fit import ccd_reference_colour, _key, PIXSCALE
 from py_files.colours import g_minus_i
-from py_files.pm_analysis import COMBINED_DIR
+from py_files.pm_analysis import V1_COMBINED_DIR as COMBINED_DIR   # the v1 combined files the adopted maps were built from
 
 OLD_MAPS = '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/rm-corrected-forced-motions/ringmaps.fits'
 BANDS = 'griz'
