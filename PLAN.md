@@ -169,7 +169,21 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       r 5.5+2.0tz, i 5.5+1.5tz, z 5.5+2.0tz; along g 1.0+6.0tz, r 6.5tz, i 1.0+3.5tz, z 5.0tz mas). Slice-000 test, clean
       Gaia stars: mean offset +0.06/+0.01, scatter 1.57/1.73 mas/yr (v2 1.72/2.01), PM pulls 1.13/1.24 (bright 1.26/1.36),
       parallax pull 1.11. A PM-level floor (s/T) would fix the pulls; Nada 2026-10-26: not worth it -> report the
-      measured pull widths in the paper instead. Full redo of 000-063 submitted. Then:
+      measured pull widths in the paper instead. Full redo of 000-063: first attempts ran OUT OF MEMORY (1 job then 4
+      jobs, ~4000 bricks each; 17,139 + slice 000 done, nothing corrupted). Cause: update_total_errors built astropy HDU
+      objects, which leaked ~ the forced-file size per brick (+1.1 GB over 12 bricks). 2026-10-27: rewritten with fitsio +
+      numpy (total_error_values / zeropoints.zp_values shared with the astropy path); verified identical columns, units
+      and headers (primary DDIVFIX kept), +43 MB over 12 bricks. Resubmitted as 4 jobs (64 workers): all 81,491
+      catalogues on ERRMODEL 5121325b + ZPTABLE 93045419720 (header-checked). Combined 2026-10-27: 266,019,817 PSF with PMs.
+      FULL-SAMPLE Gaia check (10.7M clean Gaia stars): mean -0.008/+0.003 mas/yr; scatter 1.68/1.79 (G 17-19 1.42/1.53);
+      PM pulls 1.20/1.28 (G 14-17 1.30/1.42 .. G 20-21 1.13/1.18), ~flat in Dec; parallax offset -0.05 mas (was -0.3),
+      parallax pull 1.17; |dPM| > 30: 0.10%. Final flags (Gaia stars, |dPM|>30): clean 0.10%, FEW_EPOCHS 41%, SHORT 58%,
+      NO_COLOUR 57%, BRIGHT 20%, SAT 18%, BAD_EPOCHS 29%; BAD_EPOCHS flags 2.1% of otherwise-clean, catches 59%.
+      Unmeasured epochs 7.3%. Figures regenerated (err-plots, pm-error-model); h3 rerun pending (zp-stage pixel sign bug
+      in dcr_fit fixed 2026-10-28). Paper: uncertainties rewritten (eq:errors, tab:errmodel, PM pulls reported, no
+      rescaling), flags/ZP numbers filled. 2026-10-28: h3 rerun (zp stage removes 4.0-6.1 mas; final per-axis g 9.9,
+      r 9.2, i 8.4, z 8.2; floor ~10 mas at G 16-18.5); err-plots F6 shows the zp stage; paper sec:corr_analysis rewritten
+      around tab:error_budget (now \input, table*), fig:scatter_vs_mag included. Remaining: copy v2 to CFS; commit. Then:
       combine, re-check PM pulls, figures. Ask Dustin: Gaia release / epoch used by CP astrometry per survey (drift).
 ### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
 - [x] B1 (2026-10-23) py_files/ringmap_build.py on a compute node (35 min): 294M Gaia-star epochs of 000-063

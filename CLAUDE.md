@@ -7,7 +7,8 @@ Paper draft: `writeup/main.tex` (MNRAS class). Progress tracker: `PLAN.md` -- re
 ## Pipeline (per 0.25x0.25 deg "brick")
 Input from Dustin's forced-photometry runs: `/pscratch/sd/d/dstn/forced-motions-dr10/forced-brick/<RRR>/`
 (`forced-<brick>.fits` = per-epoch "full fit" positions `full_fit_dra/ddec`; `tractor-forced-<brick>.fits` = Tractor catalogue).
-Corrections are applied **in sequence**; each map is built on the previous stage's output:
+Corrections are applied **in sequence**; each map is built on the previous stage's output (redo errors + zero points +
+PM only on finished bricks: `slurm/run_bricks.py --redo-errors`, restartable via ERRMODEL/ZPTABLE headers):
 
 1. `py_files/brick_DCR.py` -> `dcr_full_fit_*` columns. Since 2026-10-23: Δ (mas, along the parallactic direction) =
    tan z · (a + b_blue·min(c−c_b,0) + b_red·max(c−c_b,0)), c = c_rel clipped to [−1.5, 2.5], per band (James's "two
@@ -27,11 +28,18 @@ Corrections are applied **in sequence**; each map is built on the previous stage
    after the two-line DCR and `ringmaps-dr10.fits`; c0 = 1.469 = median g−i of the map stars (was 1.642). (The old binned `lateralmaps.fits` was
    noise-dominated and is no longer used.)
    Steps 2-3 build maps from σ < 10 mas measurements but apply them to every measurement with a valid fit.
-4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `lm_full_fit_*`, PSF sources only,
+3b. Exposure-CCD zero points (since 2026-10-26; `py_files/zeropoints.py`) -> `zp_full_fit_dra/ddec` = lm offsets minus
+   the median offset of the CCD's bright Gaia stars in that exposure (2.2 / 4.2 mas rms in RA / Dec; turbulence + per-CCD
+   astrometric-solution errors; also removes a frame drift of ~0.2 mas/yr). Table (3.15M CCD-exposures) on CFS
+   `ls-motions/zeropoints/zeropoints-dr10-v2.fits`, built from the v2 combined Gaia epochs. Written by the lateral step
+   (or `run_bricks.py --redo-errors`); the PM fit uses zp_ columns when present. Paper: sec:zeropoints.
+4. `py_files/create_brick_catalogue.py` -> `tractor-pm-<brick>.fits`. Weighted LSQ on `zp_full_fit_*` (else `lm_`), PSF sources only,
    measured epochs only (ivar > 0 and full_fit_dra != 0); 4-param (PM) and 5-param (PM+parallax) fits. Per-epoch
-   error = sqrt(stat^2 + sigma_sys[band]^2), sigma_sys g 16, r 12, i 12, z 10 mas (`py_files/error_model.py`, from
-   `run/pull-vs-mag.ipynb`; the lateral step writes `full_fit_*_ivar_total` + headers SIGSYS_G..Z, which the PM fit
-   reads and copies). INPUT BUG: forced photometry before legacypipe 7aece157 (2026-09-16) has `full_fit_ddec_ivar`
+   error = 2x2 covariance per epoch (since 2026-10-26, `py_files/error_model.py` + `error_model.json`, fit by
+   `run/error-model-fit.ipynb`): statistical + isotropic (s_b + m_b tan z)^2 + extra (a_b + k_b tan z)^2 along the
+   refraction direction (RA/Dec correlated); the PM fit whitens each epoch's RA/Dec pair. The lateral step / redo writes
+   `full_fit_{dra,ddec}_ivar_total`, `full_fit_radec_cov_total` + headers ERRMODEL, SIGSYS_*, SIGSYK_*, ALONGA_*, ALONGK_*.
+   PM pulls vs Gaia are 1.20 / 1.28 (RA / Dec; correlated errors) -- reported in the paper, NOT rescaled (Nada). INPUT BUG: forced photometry before legacypipe 7aece157 (2026-09-16) has `full_fit_ddec_ivar`
    too large by 1/cos^2(Dec) (all CFS inputs, archive bricks; scratch 000-063 inputs are fixed). The lateral step
    multiplies it by cos^2(Dec) when the input is affected, decided by Dustin's header card DDIVFIX = T if present (input PRIMARY header; all scratch inputs have it since 2026-10-23), else by
    the input file date (INPDATE, stamped by brick_DCR), else by the data (`error_model.corrected_ddec_ivar`); headers
