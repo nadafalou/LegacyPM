@@ -13,7 +13,12 @@ from every object on that CCD in that exposure. With fewer than N_MIN such stars
 used (if at least EXP_MIN_CCDS of its CCDs have one), else no correction. The table also holds zero points from two
 disjoint halves of the Gaia stars (by a hash of brickid, objid) for validation without circularity.
 
-  python zeropoints.py build [--workers 32]      # compute node; reads all v2 combined gaia-epochs / gaia-objects
+NEW SKY needs two passes, because the table is measured from processed bricks: (1) run the bricks (zero points apply
+only to exposure-CCDs already in the table; headers record the covered fraction, ZPFRAC); (2) combine; (3) rebuild the
+table from ALL combined slices; (4) run_bricks.py --redo-errors (redoes every brick whose ZPTABLE differs). See RUNBOOK.
+
+  python zeropoints.py build [--degrees 000-063 ...] [--combined-dir DIR ...] [--out PATH] [--workers 32]
+      # compute node; default: every slice with combined files in the default combined directory
 """
 import os
 import sys
@@ -21,7 +26,9 @@ import argparse
 import numpy as np
 import fitsio
 
-DEFAULT_TABLE = '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/zeropoints/zeropoints-dr10-v2.fits'
+# the table the pipeline applies; LEGACYPM_ZP_TABLE overrides it (tests, or a new table before it replaces this one)
+DEFAULT_TABLE = os.environ.get('LEGACYPM_ZP_TABLE',
+                               '/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/zeropoints/zeropoints-dr10-v2.fits')
 N_MIN = 10
 EXP_MIN_CCDS = 3
 MASKBITS_BAD = (1 << 1) | (1 << 11) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14)   # BRIGHT, MEDIUM, SATUR_*
@@ -90,11 +97,22 @@ def _zp_with_fallback(key, med_ra, med_de, n):
     return zr, zd, src
 
 
-def build(combined_dir, out_path, workers=32, degrees=None):
+def available_slices(combined_dir):
+    """Slices with both combined Gaia files in combined_dir."""
+    import glob
+    have = lambda kind: {os.path.basename(f)[len(f'gaia-{kind}-'):-5] for f in glob.glob(os.path.join(combined_dir, f'gaia-{kind}-*.fits'))}
+    return sorted(have('epochs') & have('objects'))
+
+
+def build(combined_dirs, out_path, workers=32, degrees=None):
+    """Zero-point table from the combined Gaia files of the given slices (default: all available) in one or more
+    combined directories (a slice present in several is read from each: keep the directories disjoint)."""
     from concurrent.futures import ProcessPoolExecutor
-    degrees = degrees or [f'{d:03d}' for d in range(64)]
+    combined_dirs = [combined_dirs] if isinstance(combined_dirs, str) else list(combined_dirs)
+    jobs = [(cd, d) for cd in combined_dirs for d in (degrees or available_slices(cd))]
+    print(f'reading {len(jobs)} slice files from {combined_dirs}', flush=True)
     with ProcessPoolExecutor(workers) as ex:
-        parts = [p for p in ex.map(_read_slice, [(combined_dir, d) for d in degrees]) if p is not None]
+        parts = [p for p in ex.map(_read_slice, jobs) if p is not None]
     key = np.concatenate([p[0] for p in parts]); ra = np.concatenate([p[1] for p in parts])
     de = np.concatenate([p[2] for p in parts]); half = np.concatenate([p[3] for p in parts]); del parts
     print(f'{len(key):,} bright Gaia-star epochs', flush=True)
@@ -116,7 +134,7 @@ def build(combined_dir, out_path, workers=32, degrees=None):
         out[k] = v
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     tmp = out_path + '.tmp'
-    fitsio.write(tmp, out, clobber=True, header={'NMIN': N_MIN, 'EXPMIN': EXP_MIN_CCDS})
+    fitsio.write(tmp, out, clobber=True, header={'NMIN': N_MIN, 'EXPMIN': EXP_MIN_CCDS, 'NSLICES': len(jobs)})
     os.replace(tmp, out_path)
     print(f'{len(u):,} exposure-CCDs -> {out_path}; source: CCD {np.mean(out["zp_src"] == 1):.1%}, exposure '
           f'{np.mean(out["zp_src"] == 2):.1%}, none {np.mean(out["zp_src"] == 0):.1%}', flush=True)
@@ -140,10 +158,18 @@ def zp_values(D, path=DEFAULT_TABLE):
     if not os.path.exists(path):
         return {}, []
     zr, zd = lookup(D['expnum'], D['ccdname'], path=path)
+    # fraction of measured epochs whose exposure-CCD is in the table (others get no correction): new sky has none
+    # until the table is rebuilt with it
+    k = exposure_ccd_key(D['expnum'], D['ccdname'])
+    Z = _TABLE[(path, '')]
+    hit = Z['key'][np.clip(np.searchsorted(Z['key'], k), 0, len(Z) - 1)] == k
+    measured = (D['full_fit_dra'] != 0) & (D['full_fit_dra_ivar'] > 0)
+    frac = float(hit[measured].mean()) if measured.any() else 0.
     vals = {'zp_full_fit_dra': (D['lm_full_fit_dra'] - zr / 1000.).astype(np.float32),
             'zp_full_fit_ddec': (D['lm_full_fit_ddec'] - zd / 1000.).astype(np.float32)}
-    cards = [('ZPTABLE', table_id(path), 'exposure-CCD zero-point table ID (zeropoints.py)'),
-             ('ZPCORR', True, 'zp_full_fit_* = lm_full_fit_* - exposure-CCD zero point')]
+    cards = [('ZPTABLE', table_id(path), 'zero-point table ID (zeropoints.py)'),
+             ('ZPFRAC', round(frac, 4), 'fraction of measured epochs with a zero point'),
+             ('ZPCORR', frac > 0, 'zp_full_fit_* = lm_full_fit_* - exposure-CCD zero point')]
     return vals, cards
 
 
@@ -184,7 +210,9 @@ if __name__ == '__main__':
     ap.add_argument('step', choices=['build'])
     ap.add_argument('--workers', type=int, default=32)
     ap.add_argument('--out', default=DEFAULT_TABLE)
+    ap.add_argument('--degrees', nargs='*', default=None, help='slices or ranges (default: all with combined files)')
+    ap.add_argument('--combined-dir', action='append', default=None, help='combined directory (repeatable)')
     args = ap.parse_args()
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from py_files.pm_analysis import COMBINED_DIR
-    build(COMBINED_DIR, args.out, args.workers)
+    from py_files.pm_analysis import COMBINED_DIR, _degree_list
+    build(args.combined_dir or [COMBINED_DIR], args.out, args.workers, _degree_list(args.degrees) if args.degrees else None)

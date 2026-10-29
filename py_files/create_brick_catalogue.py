@@ -208,7 +208,7 @@ def create_brick_catalogue(filename, new_dir, old_dir, tractor_dir, original_dat
         hdr = forced_table[1].header   # the model the lateral step used (older files: one SIGSYS for all bands)
         sys_cards = [(k, hdr[k], c) for k, _, c in header_cards() if k in hdr] or \
                     [('SIGSYS', hdr.get('SIGSYS', 20.), 'systematic per-epoch error, all bands (mas)')]
-        sys_cards += [(k, hdr[k], hdr.comments[k]) for k in ('INPDATE', 'DDIVFIX', 'DECRATIO', 'DECFIX', 'DECBASIS', 'ZPTABLE', 'ZPCORR') if k in hdr]
+        sys_cards += [(k, hdr[k], hdr.comments[k]) for k in ('INPDATE', 'DDIVFIX', 'DECRATIO', 'DECFIX', 'DECBASIS', 'ZPTABLE', 'ZPFRAC', 'ZPCORR') if k in hdr]
     else:
         Fd = forced_table[1].data
         ddec_fixed, dec_cards = corrected_ddec_ivar(dra_ivar, ddec_ivar, Fd.dec, forced_table[1].header.get('INPDATE'),

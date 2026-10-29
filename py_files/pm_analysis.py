@@ -106,8 +106,12 @@ COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/combined'
 V1_COMBINED_DIR = '/pscratch/sd/n/nelfalou/legacypm-catalogue/combined'
 
 
-def _degree_list(degrees):
-    """['060', '061'] or ['000-063'] -> list of 3-digit slice names."""
+def _degree_list(degrees, combined_dir=None):
+    """['060', '061'] or ['000-063'] -> list of 3-digit slice names; None -> every slice with a combined file."""
+    if degrees is None:
+        import glob as _glob
+        names = {os.path.basename(f).rsplit('-', 1)[-1][:3] for f in _glob.glob(os.path.join(combined_dir or COMBINED_DIR, '*-[0-9][0-9][0-9].fits'))}
+        return sorted(names)
     out = []
     for item in degrees:
         lo, _, hi = item.partition('-')
@@ -119,11 +123,11 @@ def _degree_list(degrees):
 QUALITY_INPUT_COLUMNS = ['pm_quality', 'pm_flag', 'n_epochs', 'baseline_days', 'flux_g', 'flux_i', 'flux_z', 'maskbits']
 
 
-def load_combined(kind, degrees=('000-063',), combined_dir=COMBINED_DIR, columns=None):
+def load_combined(kind, degrees=None, combined_dir=COMBINED_DIR, columns=None):
     """Load and concatenate combined files of one kind ('pm', 'gaia-objects', 'gaia-epochs', 'bricks') for the
     given slices. Slices without a combined file yet are skipped (and listed). Returns a fits_table."""
     tables, missing = [], []
-    for deg in _degree_list(degrees):
+    for deg in _degree_list(degrees, combined_dir):
         path = os.path.join(combined_dir, f"{kind}-{deg}.fits")
         if _is_complete(path):
             cols = columns

@@ -101,7 +101,9 @@ def read_brick(args):
     extra = {'n_epochs': n_epochs.astype(np.int16), 'baseline_days': baseline.astype(np.float32),
              'objid_clash': objid_clash}
     gaia_rows = (frow >= 0) & is_gaia[np.maximum(frow, 0)]
+    hdr = fitsio.read_header(tf, 1)
     summary = {'brickname': brick, 'ra': float(np.median(T['ra'])), 'dec': float(np.median(T['dec'])),
+               'zp_frac': float(hdr.get('ZPFRAC', -1)),   # fraction of epochs with an exposure zero point (-1: unknown)
                'n_objects': int(own.sum()), 'n_appended': int((~own).sum()), 'n_clash_psf': int((objid_clash & is_psf).sum()), 'n_psf': int(is_psf.sum()), 'n_pm_ok': int(ok.sum()),
                'n_gaia': int(is_gaia.sum()), 'n_gaia_pm_ok': int((ok & is_gaia).sum()),
                'median_epochs_psf': float(np.median(n_epochs[is_psf])) if is_psf.any() else 0.,

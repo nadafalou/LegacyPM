@@ -10,7 +10,7 @@
 #SBATCH --nodes=1
 #SBATCH --time=06:00:00
 #SBATCH --image=docker:nadafalou/legacypm:5
-#SBATCH --output=/pscratch/sd/n/nelfalou/legacypm-catalogue/slurm-logs/%x-%j.out
+#SBATCH --output=/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/slurm-logs/%x-%j.out
 
 # run from the repo clone this script lives in (Slurm copies the script, so use the submit dir)
 cd "$SLURM_SUBMIT_DIR"
