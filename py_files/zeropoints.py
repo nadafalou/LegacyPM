@@ -133,16 +133,27 @@ def table_id(path=DEFAULT_TABLE):
     return f'{int(st.st_mtime) % 10**8:08d}{st.st_size % 1000:03d}'
 
 
-def add_zp_columns(hdul, path=DEFAULT_TABLE):
-    """Write zp_full_fit_dra/ddec (arcsec) = lm_full_fit_dra/ddec minus the exposure-CCD zero point into a corrected
-    forced table (add or overwrite; the table HDU is rebuilt when columns are added), plus header cards. No table:
-    nothing is written (the PM fit then uses the lm_ columns)."""
-    from astropy.io import fits
+def zp_values(D, path=DEFAULT_TABLE):
+    """({column: array}, header cards) for the zero-point-corrected positions of a corrected forced table D (any
+    record array with expnum, ccdname, lm_full_fit_dra/ddec): zp_full_fit_* = lm_full_fit_* - zero point (arcsec).
+    No table: ({}, [])."""
     if not os.path.exists(path):
+        return {}, []
+    zr, zd = lookup(D['expnum'], D['ccdname'], path=path)
+    vals = {'zp_full_fit_dra': (D['lm_full_fit_dra'] - zr / 1000.).astype(np.float32),
+            'zp_full_fit_ddec': (D['lm_full_fit_ddec'] - zd / 1000.).astype(np.float32)}
+    cards = [('ZPTABLE', table_id(path), 'exposure-CCD zero-point table ID (zeropoints.py)'),
+             ('ZPCORR', True, 'zp_full_fit_* = lm_full_fit_* - exposure-CCD zero point')]
+    return vals, cards
+
+
+def add_zp_columns(hdul, path=DEFAULT_TABLE):
+    """Write zp_full_fit_dra/ddec (arcsec) into an astropy HDUList of a corrected forced file (add or overwrite; the
+    table HDU is rebuilt when columns are added), plus header cards. No table: nothing is written."""
+    from astropy.io import fits
+    vals, cards = zp_values(hdul[1].data, path)
+    if not vals:
         return
-    D = hdul[1].data
-    zr, zd = lookup(D.expnum, D.ccdname, path=path)
-    vals = {'zp_full_fit_dra': D.lm_full_fit_dra - zr / 1000., 'zp_full_fit_ddec': D.lm_full_fit_ddec - zd / 1000.}
     names = hdul[1].columns.names
     for k, v in vals.items():
         if k in names:
@@ -151,17 +162,17 @@ def add_zp_columns(hdul, path=DEFAULT_TABLE):
     if new:
         hdr = hdul[1].header.copy()
         hdul[1] = fits.BinTableHDU.from_columns(hdul[1].columns + fits.ColDefs(new), header=hdr)
-    hdul[1].header['ZPTABLE'] = (table_id(path), 'exposure-CCD zero-point table ID (zeropoints.py)')
-    hdul[1].header['ZPCORR'] = (True, 'zp_full_fit_* = lm_full_fit_* - exposure-CCD zero point')
+    for key, val, comment in cards:
+        hdul[1].header[key] = (val, comment)
 
 
 def lookup(expnum, ccdname, which='', path=DEFAULT_TABLE):
     """Zero points (RA*, Dec) in mas to subtract from each epoch's offsets; which = '' (all Gaia stars), 'a' or 'b'
     (halves, for validation). Exposure-CCDs not in the table get 0."""
-    if path not in _TABLE:
-        _TABLE[path] = fitsio.read(path)
-    Z = _TABLE[path]
     sfx = f'_{which}' if which else ''
+    if (path, sfx) not in _TABLE:   # only the columns needed (the full table is ~170 MB; workers share it after fork)
+        _TABLE[(path, sfx)] = fitsio.read(path, columns=['key', f'zp_ra{sfx}', f'zp_dec{sfx}'])
+    Z = _TABLE[(path, sfx)]
     k = exposure_ccd_key(expnum, ccdname)
     j = np.clip(np.searchsorted(Z['key'], k), 0, len(Z) - 1)
     hit = Z['key'][j] == k

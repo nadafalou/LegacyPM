@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import numpy as np
 from astrometry.util.fits import *
@@ -153,50 +154,82 @@ TOTAL_ERROR_COLUMNS = [('full_fit_dra_ivar_total', 'arcsec^(-2)'), ('full_fit_dd
                        ('full_fit_radec_cov_total', 'arcsec^2')]
 
 
-def add_total_errors(hdul):
-    """Write (or overwrite) the total per-epoch error columns and header cards of a corrected forced table:
+def total_error_values(D, hdr1, hdr0):
+    """({column: array}, header cards) for the total per-epoch errors of a corrected forced table D (any record array):
     full_fit_{dra,ddec}_ivar_total = 1 / marginal variance in RA* / Dec, full_fit_radec_cov_total = RA-Dec covariance
-    (error_model.epoch_covariance: statistical + sigma_sys + the along-refraction term). The input Dec ivar is first
-    corrected for the legacypipe cos^2(Dec) bug if this brick's input has it."""
-    D = hdul[1].data
-    ivar_dec, dec_cards = corrected_ddec_ivar(D.full_fit_dra_ivar, D.full_fit_ddec_ivar, D.dec,
-                                              hdul[1].header.get('INPDATE'),
-                                              hdul[1].header.get('DDIVFIX', hdul[0].header.get('DDIVFIX')))
-    pa, tanz = epoch_geometry(D.ra, D.dec, D.mjd, D.exptime)
-    var_ra, var_dec, cov = epoch_covariance(D.full_fit_dra_ivar, ivar_dec, D.filter, pa, tanz)
+    (error_model.epoch_covariance). The input Dec ivar is first corrected for the legacypipe cos^2(Dec) bug if this
+    brick's input has it (decided from the table header hdr1 and the primary header hdr0)."""
+    ivar_dec, dec_cards = corrected_ddec_ivar(D['full_fit_dra_ivar'], D['full_fit_ddec_ivar'], D['dec'],
+                                              hdr1.get('INPDATE'), hdr1.get('DDIVFIX', hdr0.get('DDIVFIX')))
+    pa, tanz = epoch_geometry(D['ra'], D['dec'], D['mjd'], D['exptime'])
+    var_ra, var_dec, cov = epoch_covariance(D['full_fit_dra_ivar'], ivar_dec, D['filter'], pa, tanz)
     with np.errstate(divide='ignore'):
-        values = [np.where(np.isfinite(var_ra), 1. / var_ra, 0.), np.where(np.isfinite(var_dec), 1. / var_dec, 0.), cov]
+        arrays = [np.where(np.isfinite(var_ra), 1. / var_ra, 0.), np.where(np.isfinite(var_dec), 1. / var_dec, 0.), cov]
+    return ({name: a.astype(np.float32) for (name, _), a in zip(TOTAL_ERROR_COLUMNS, arrays)},
+            header_cards() + dec_cards)
+
+
+def add_total_errors(hdul):
+    """Write (or overwrite) the total-error columns and header cards into an astropy HDUList of a corrected forced
+    file (the table HDU is rebuilt when columns are added; used by the full lateral-colour step)."""
+    values, cards = total_error_values(hdul[1].data, hdul[1].header, hdul[0].header)
     names = hdul[1].columns.names
-    new = [fits.Column(name=name, format='E', unit=unit, array=arr)
-           for (name, unit), arr in zip(TOTAL_ERROR_COLUMNS, values) if name not in names]
-    for (name, unit), arr in zip(TOTAL_ERROR_COLUMNS, values):
+    for name, arr in values.items():
         if name in names:
             hdul[1].data[name] = arr
+    new = [fits.Column(name=name, format='E', unit=unit, array=values[name])
+           for name, unit in TOTAL_ERROR_COLUMNS if name not in names]
     if new:
         # rebuild the table HDU: adding columns to an existing HDU in place can leave the header and the data out of
         # step when it is written (2026-10-26: that wrote headers listing a column the data block lacked)
         hdr = hdul[1].header.copy()
         hdul[1] = fits.BinTableHDU.from_columns(hdul[1].columns + fits.ColDefs(new), header=hdr)
-    for key, val, comment in header_cards() + dec_cards:   # error-model parameters; Dec-ivar diagnosis
+    for key, val, comment in cards:   # error-model parameters; Dec-ivar diagnosis
         hdul[1].header[key] = (val, comment)
+
+
+_STRUCTURAL = re.compile(r'^(SIMPLE|BITPIX|NAXIS\d*|EXTEND|XTENSION|PCOUNT|GCOUNT|TFIELDS|EXTNAME|CHECKSUM|DATASUM|'
+                         r'T(TYPE|FORM|UNIT|DIM|NULL|SCAL|ZERO|DISP)\d+)$')
 
 
 def update_total_errors(path):
     """Recompute the total-error columns and the exposure-CCD zero-point-corrected positions (zp_full_fit_*) of an
     already corrected forced file in place (lm_ positions untouched); used to apply a new error model / zero-point
-    table without rerunning the corrections (run_bricks.py --redo-errors)."""
-    with fits.open(path) as h:
-        hdul = fits.HDUList([fits.PrimaryHDU(data=h[0].data, header=h[0].header.copy()),
-                             fits.BinTableHDU(data=h[1].data.copy(), header=h[1].header.copy())])
-    n_rows, cols_before = len(hdul[1].data), list(hdul[1].columns.names)
-    add_total_errors(hdul)
-    zeropoints.add_zp_columns(hdul)
+    table without rerunning the corrections (run_bricks.py --redo-errors). Read, computed and written with fitsio and
+    plain numpy arrays: building astropy HDU objects here leaked ~ the file size per call (2026-10-27; workers ran
+    out of memory after ~85 bricks)."""
+    import fitsio
+    with fitsio.FITS(path) as f:
+        h0, h1, D, extname = f[0].read_header(), f[1].read_header(), f[1].read(), f[1].get_extname()
+    values, cards = total_error_values(D, h1, h0)
+    zvals, zcards = zeropoints.zp_values(D)
+    values.update(zvals)
+    cards = cards + zcards
+    names = list(D.dtype.names)
+    new = [k for k in values if k not in names]
+    if new:
+        out = np.empty(len(D), dtype=D.dtype.descr + [(k, 'f4') for k in new])
+        for n in names:
+            out[n] = D[n]
+    else:
+        out = D
+    for k, v in values.items():
+        out[k] = v
+    unit_of = {h1.get(f'TTYPE{i}'): h1.get(f'TUNIT{i}', '') for i in range(1, h1.get('TFIELDS', 0) + 1)}
+    unit_of.update({n: u for n, u in TOTAL_ERROR_COLUMNS}); unit_of.update({k: 'arcsec' for k in zvals})
+    units = [str(unit_of.get(n, '') or '') for n in out.dtype.names]
+    keep = lambda hdr: [r for r in hdr.records() if not _STRUCTURAL.match(str(r['name']).strip())]
     tmp = path + ".tmp"
-    hdul.writeto(tmp, overwrite=True)
-    with fits.open(tmp) as t:   # read back before replacing the original
-        assert len(t[1].data) == n_rows and all(c in t[1].columns.names for c in cols_before), "rewrite check failed"
-        assert all(c in t[1].columns.names for c, _ in TOTAL_ERROR_COLUMNS), "rewrite check failed"
-        _ = t[1].data['full_fit_radec_cov_total'][:1]
+    with fitsio.FITS(tmp, 'rw', clobber=True) as fo:
+        fo.write(out, extname=extname or None, units=units, header=keep(h1))
+        fo[0].write_keys(keep(h0))
+        for key, val, comment in cards:
+            fo[1].write_key(key, val, comment=comment)
+    with fitsio.FITS(tmp) as t:   # read back before replacing the original
+        assert t[1].get_nrows() == len(D), "rewrite check failed (rows)"
+        cols = t[1].get_colnames()
+        assert all(n in cols for n in out.dtype.names), "rewrite check failed (columns)"
+        _ = t[1].read(columns=list(values), rows=[0, len(D) - 1])
     os.replace(tmp, path)
 
 

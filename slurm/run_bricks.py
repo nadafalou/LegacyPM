@@ -19,6 +19,7 @@ import sys
 import gc
 import time
 import argparse
+import numpy as np
 import logging
 import warnings
 import contextlib
@@ -196,6 +197,8 @@ if __name__ == "__main__":
         if args.dry_run or not jobs:
             sys.exit(0)
         STATE.update(lm=brick_lateralmaps, pm=create_brick_catalogue)
+        zeropoints.lookup(np.zeros(1, int), np.array(['N1']))   # load the zero-point table once, before forking
+        gc.freeze()
         t0 = time.time(); n_ok, failed = 0, []
         with ProcessPoolExecutor(args.workers, mp_context=mp.get_context("fork"), initializer=worker_init) as ex:
             futs = [ex.submit(run_redo_errors, *job) for job in jobs]
