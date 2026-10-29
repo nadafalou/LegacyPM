@@ -62,8 +62,12 @@ login currently fails. The image provides software only; the code always runs fr
   `/pscratch/sd/d/dstn/forced-motions-3/` run) and `/pscratch/sd/n/nelfalou/{dcr,rm,lm}-gaia-stars/` are gone (purged/empty).
   Maps survive at `/global/cfs/cdirs/cosmo/work/users/nelfalou/ls-motions/{rm,lm}-corrected-forced-motions/`.
   Any rebuild must pull Gaia stars (`ref_cat == 'GE'`) from the per-brick `forced-*` files, as `run/lateral-model.ipynb` does.
-- `/pscratch/sd/n/nelfalou/legacypm-catalogue/<deg>/` (purged; recreated by new runs) is the default output root of
-  `slurm/run_bricks.py`. Notebooks still point at old dirs there -- repoint them.
+- `/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/<deg>/` (+ `combined/`, `slurm-logs/`) is the default output root of
+  `slurm/run_bricks.py` and what `pm_analysis.COMBINED_DIR` points at. The v1 root `legacypm-catalogue/` is superseded.
+- New sky (beyond 000-063) needs TWO passes because the zero points are measured from processed bricks: run -> combine
+  -> rebuild the zero-point table from all combined slices -> `--redo-errors` everywhere (RUNBOOK section 5; tested on
+  064-069, 2026-10-29). Header ZPFRAC = fraction of epochs that got a zero point. Forced-photometry inputs exist only
+  up to slice 069.
 
 ## Constraints
 - Goal: RA 000-063 processed with the current code (`slurm/run_bricks.py 000-063`, see RUNBOOK.md) for the analysis

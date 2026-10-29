@@ -1,6 +1,6 @@
 # LegacyPM progress tracker
 
-Last updated: 2026-10-23. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
+Last updated: 2026-10-29. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked
 
 ## CURRENT PLAN -- from the meetings with Dustin (2026-10-22) and James (2026-10-2x), in priority order
 Goal: submit the paper in ~2 weeks (Nada). James: two issues MUST be understood before submission (H1, H2).
@@ -183,7 +183,14 @@ Steps A-C and H run on the combined files (no pipeline rerun needed).
       in dcr_fit fixed 2026-10-28). Paper: uncertainties rewritten (eq:errors, tab:errmodel, PM pulls reported, no
       rescaling), flags/ZP numbers filled. 2026-10-28: h3 rerun (zp stage removes 4.0-6.1 mas; final per-axis g 9.9,
       r 9.2, i 8.4, z 8.2; floor ~10 mas at G 16-18.5); err-plots F6 shows the zp stage; paper sec:corr_analysis rewritten
-      around tab:error_budget (now \input, table*), fig:scatter_vs_mag included. Remaining: copy v2 to CFS; commit. Then:
+      around tab:error_budget (now \input, table*), fig:scatter_vs_mag included. 2026-10-29: last \figtodo's resolved
+      (fig:lateral = lateral_colour_bins.png, fig:dcr = dcr_before_after.png; captions corrected); stale Results paragraph
+      removed. NEW Results subsections: corrections, catalogue (fig:footprint), comparison with Gaia (fig:pm_vs_gaia),
+      uncertainties (fig:pulls, fig:pm_errors), parallaxes (fig:parallax); fig:error_floor in the uncertainties section;
+      fig:pos_err in the Gaia subsection (resolves Dustin's value-added comment). pm_precision_vs_mag.pdf not used
+      (redundant with pm_errors). Headline numbers (diag/results_numbers.py): 266.0M PSF with PMs, 202.2M clean (76%),
+      12.2M clean Gaia; median 32 epochs / 4.8 yr; r > 21 with sigma < 2/5/10 mas/yr: 2.0M/8.5M/17.0M. Paper 17 pp, clean
+      build. Remaining: copy v2 to CFS; commit. Then:
       combine, re-check PM pulls, figures. Ask Dustin: Gaia release / epoch used by CP astrometry per survey (drift).
 ### B. Rebuild the CCD (tree-ring) maps from the full sample (needs A2)
 - [x] B1 (2026-10-23) py_files/ringmap_build.py on a compute node (35 min): 294M Gaia-star epochs of 000-063
@@ -583,6 +590,17 @@ Proposed fix (remaining):
   Expected faint ~34.8 mas; verify by rerunning scratchpad e2e/ (run_e2e.py, eval_e2e.py, faint.py) on the 8 test bricks.
 - If rebuilt: keep the 16-px bins only if stars per bin >> 100; otherwise consider a smoother model (as for LM).
   Validate with the same held-out star-level test as lateral-model.ipynb.
+
+## Health check: processing new sky (2026-10-29; test output /pscratch/sd/n/nelfalou/healthcheck/, deletable)
+- [x] Full pipeline on 064-069 (156 bricks, outside the calibrated area): no failures. Inputs exist only up to 069 ->
+      Dustin must run forced photometry for 070-359 first. Disk ~130 GB per slice (v2 quota 20 TB).
+- [x] FOUND: the zero points were silently missing on new sky (pass 1: 12% of epochs; 0% in 065-069) while headers said
+      ZPCORR = T. Fixed: header ZPFRAC (fraction covered; also in combine summaries as zp_frac); zeropoints.py build
+      over all combined slices / several dirs; LEGACYPM_ZP_TABLE override; slurm/redo_errors.sbatch. Two-pass test
+      (combine -> test table from 70 slices -> redo -> combine): ZPFRAC median 0.9996, min 0.976. Production table
+      unchanged.
+- [ ] On new sky: recheck pulls (error model fitted on 000/040) and the maps/lateral model at other Dec / airmass.
+- RUNBOOK.md rewritten (current pipeline only; section 5 = the two-pass procedure); README quick start updated.
 
 ## Runbook (issue #1) -- see RUNBOOK.md (written 2026-10-12)
 - Slurm driver `slurm/run_bricks.py` + `slurm/run_bricks.sbatch` (no FireWorks needed). Tested on a login node in the
