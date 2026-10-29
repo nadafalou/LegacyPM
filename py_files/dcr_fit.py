@@ -212,7 +212,7 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
     # also returns 'clean' (star-level quality, pm_quality == 0 equivalent), 'G' and 'sig_stat' (statistical error, mas)
     """Gaia-star epochs (sigma < max_sigma_mas, valid fit) with, for every correction stage, the offset from Gaia
     along (par_<stage>) and across (perp_<stage>) the parallactic direction, in mas, plus band, c_rel and tan z.
-    Stage keys: 'raw', 'dcr', 'rm', 'lm'."""
+    Stage keys: 'raw', 'dcr', 'rm', 'lm', and 'zp' (exposure-CCD zero points) when the files have zp_full_fit_*."""
     keys, giref, ccd_index = ccd_reference_colour()
     rng = np.random.default_rng(seed)
     cols = (EPOCH_COLS + ['full_fit_dra'] + [f'{s}full_fit_{a}' for s in STAGES[1:] for a in 'xy'])
@@ -222,14 +222,18 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
         fo = os.path.join(combined_dir, f'gaia-objects-{deg}.fits')
         if not (os.path.exists(fe) and os.path.exists(fo)):
             continue
-        F = fitsio.read(fe, columns=cols)
+        have = set(fitsio.FITS(fe)[1].get_colnames())
+        zp_cols = ['lm_full_fit_dra', 'lm_full_fit_ddec', 'zp_full_fit_dra', 'zp_full_fit_ddec']
+        has_zp = all(c in have for c in zp_cols)
+        F = fitsio.read(fe, columns=cols + (zp_cols if has_zp else []))
         if brick_fraction < 1:
             bricks = np.unique(F['brickid'])
             F = F[np.isin(F['brickid'], rng.choice(bricks, max(1, int(brick_fraction * len(bricks))), replace=False))]
         F = F[(F['full_fit_dra_ivar'] > 1 / (max_sigma_mas / 1000.)**2) & (F['full_fit_dra'] != 0)]
         T = fitsio.read(fo, columns=['brickid', 'objid', 'flux_g', 'flux_i', 'maskbits', 'n_epochs', 'baseline_days',
                                      'pm_flag', 'gaia_phot_g_mean_mag', 'gaia_phot_bp_mean_mag',
-                                     'gaia_phot_rp_mean_mag', 'pmra', 'pmdec', 'ra', 'dec'])
+                                     'gaia_phot_rp_mean_mag', 'pmra', 'pmdec', 'ra', 'dec']
+                    + (['pm_quality'] if 'pm_quality' in fitsio.FITS(fo)[1].get_colnames() else []))
         tkey = (T['brickid'].astype(np.int64) << 32) | T['objid'].astype(np.int64)
         fkey = (F['brickid'].astype(np.int64) << 32) | F['objid'].astype(np.int64)
         srt = np.argsort(tkey)
@@ -240,8 +244,11 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
             gi = -2.5 * np.log10(T['flux_g'][row] / T['flux_i'][row])
         mb = T['maskbits'][row].astype(np.int64)
         # star-level "clean" (pm_quality == 0 equivalent, see pm_analysis.quality_bits)
-        clean = ((T['n_epochs'][row] >= 10) & (T['baseline_days'][row] >= 730) & np.isfinite(gi) & (T['pm_flag'][row] == 1)
-                 & ((mb & ((1 << 1) | (1 << 11) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14))) == 0))
+        if 'pm_quality' in T.dtype.names:   # the catalogue's own quality bits (all flags, incl. BAD_EPOCHS, colour fallback)
+            clean = (T['pm_quality'][row] == 0) & (T['pm_flag'][row] == 1)
+        else:
+            clean = ((T['n_epochs'][row] >= 10) & (T['baseline_days'][row] >= 730) & np.isfinite(gi) & (T['pm_flag'][row] == 1)
+                     & ((mb & ((1 << 1) | (1 << 11) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 14))) == 0))
         names = np.char.strip(F['ccdname'].astype(str))
         un = np.unique(names)
         cidx = np.array([ccd_index.get(n, -1) for n in un])[np.searchsorted(un, names)]
@@ -261,6 +268,12 @@ def load_stage_sample(degrees=('000',), brick_fraction=1.0, seed=1, combined_dir
             dy = F[f'{s}full_fit_y'] - F['y']
             d[f'par_{name}'] = (dx * np.cos(pa) - dy * np.sin(pa)) * PIXSCALE
             d[f'perp_{name}'] = (dx * np.sin(pa) + dy * np.cos(pa)) * PIXSCALE
+        if has_zp:   # zero-point stage: the lm_ pixel offsets shifted by the zero point (CCD x = -Dec, y = +RA)
+            # dDec = -0.262 dx  ->  dx = -dDec / 0.262 (sign fixed 2026-10-28: it doubled the Dec zero point)
+            dx = F['lm_full_fit_x'] - F['x'] - (F['zp_full_fit_ddec'] - F['lm_full_fit_ddec']) * 1000 / PIXSCALE
+            dy = F['lm_full_fit_y'] - F['y'] + (F['zp_full_fit_dra'] - F['lm_full_fit_dra']) * 1000 / PIXSCALE
+            d['par_zp'] = (dx * np.cos(pa) - dy * np.sin(pa)) * PIXSCALE
+            d['perp_zp'] = (dx * np.sin(pa) + dy * np.cos(pa)) * PIXSCALE
         for kk, v in d.items():
             out.setdefault(kk, []).append(v)
     return {kk: np.concatenate(v) for kk, v in out.items()}
