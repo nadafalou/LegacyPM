@@ -33,15 +33,24 @@ Headline numbers (full sample; `legacypm-catalogue-v2/diag/results_numbers.py`, 
       Sign flips at z > 3 (pmdec +2.5, plx +1.5) -> quasar DCR (emission lines / Lya forest), not the frame: Gaia stars
       at Dec > 10, G 19-21 agree with Gaia to 0.1 mas/yr. Optional: per-epoch confirmation (QSO offsets along the
       refraction direction vs tan z by redshift; needs forced files, ~1 h compute).
-- [ ] F12 (James). Completeness vs Gaia: stars with PMs from us vs Gaia per magnitude bin (with / without a Gaia PM).
-      Feeds I2 (what faint PMs enable).
+- [x] F12 (James; 2026-10-30) `run/completeness.ipynb` -> writeup/plots/completeness_vs_gaia.pdf (not yet in the paper).
+      22.8M unique Gaia sources (gaia-objects has 5.8% brick-overlap duplicates, brick_primary = False, never fitted;
+      de-duplicated by ref_id). Our clean sigma<10 counts exceed Gaia-with-PM counts from r = 20.9; r > 21: 17.0M (ours,
+      sigma<10) vs 0.53M (Gaia with PM). 1.44M Gaia sources without a Gaia PM get a clean PM from us (median sigma 1.8
+      mas/yr, 91% < 5; median G 21.0). We fit 94.6% of Gaia sources with a Gaia PM; clean 65-68% at G 17-20.5 (flagged
+      30.6%: SHORT_BASELINE 17.3, FEW_EPOCHS 14.0, NO_COLOUR 7.1, BRIGHT 5.9, BAD_EPOCHS 4.7, SAT 1.0); none clean at
+      G < 16 (Tractor MEDIUM mask marks every G < 16 Gaia star -> BRIGHT). In the paper: sec:res_completeness,
+      fig:completeness. Open \todo: why 4.0% of Gaia point sources have no fit (overlap duplicates of missing bricks?).
 - [ ] C2. Left/right dipole in the lateral-colour figure (colour-independent, so not lateral colour): check whether it
       survives the zero points; if so, CCD maps / WCS.
 - [ ] Optional: zero points vs time and across the focal plane (paper \todo); paper version of the DESI metallicity plot.
 
 ### 3. Paper
-- [ ] Review the figures regenerated 2026-10-29 with 8 slices (err-plots, dcr-plots, pm-error-model) and update
-      captions / numbers.
+- [x] 2026-10-30 Reviewed all paper figures: legends fixed (scatter_vs_mag, footprint, error_floor), labels
+      'statistical only' / 'full (error model)' in pm_errors; text fixed: pos_err numbers, DCR sample size, parallax
+      numbers (scatter 3.7-4.1 mas at G 16-19, 5.8 at 20.7; median error 3.6), pm_vs_gaia streak sentence, lateral
+      caption (colour-independent residual). Noted, not changed: g-band DCR model ~10 mas/tan z below the data at
+      c_rel < -1.2 (clip at -1.5; data flatten earlier).
 - [ ] Write: Discussion (only a commented TODO now; notes at the end of main.tex: empirical maps vs Bernstein's
       parametric model, limitations incl. the g-band metallicity DCR term), Conclusions, abstract (last, per Dustin).
 - [ ] Sample description: imaging date range, N_epoch / baseline distributions, numbers of bricks and measurements

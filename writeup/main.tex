@@ -120,7 +120,7 @@ The Gaia mission, launched by the European Space Agency (ESA) in December 2013, 
 
 For our study, Gaia’s precise astrometry and photometry serve as a ``ground-truth" reference for calibrating and correcting proper motion and parallax measurements derived from DESI Legacy Imaging Survey data, extending these measurements to sources several magnitudes fainter than the Gaia limit: our proper-motion uncertainties stay below 10\,mas\,yr$^{-1}$ to $r \approx 23.5$ (Section~\ref{sec:res_errors}).
 
-Figure~\ref{fig:pos_err} compares the positional uncertainties of the two catalogues. At Gaia's limit ($r \approx 21$), the positions measured by the Legacy Surveys are less precise than Gaia's (a median of $\sim\!8$\,mas against $\sim\!3$\,mas), but the Legacy Surveys continue about three magnitudes deeper. The Legacy Surveys uncertainties shown are, however, purely statistical: for bright stars the true per-exposure positional errors are dominated by systematic errors of $\sim\!10$\,mas (Section~\ref{sec:corr_analysis}). Measuring and correcting these systematic errors is the main subject of this paper.
+Figure~\ref{fig:pos_err} compares the positional uncertainties of the two catalogues. Near Gaia's limit ($r \approx 21.5$), the positions measured by the Legacy Surveys are less precise than Gaia's (a median of $\sim\!6$\,mas against $\sim\!3$\,mas), but the Legacy Surveys continue about three magnitudes deeper. The Legacy Surveys uncertainties shown are, however, purely statistical: for bright stars the true per-exposure positional errors are dominated by systematic errors of $\sim\!10$\,mas (Section~\ref{sec:corr_analysis}). Measuring and correcting these systematic errors is the main subject of this paper.
 
 \begin{figure}
     \centering
@@ -316,7 +316,7 @@ On bricks held out of the fit, the correction reduces the robust per-axis scatte
 \begin{figure*}
     \centering
     \includegraphics[width=\textwidth]{plots/lateral_colour_bins.png}
-    \caption{Lateral colour across the DECam focal plane in the $g$ band, for Gaia stars in three bins of $g-i$ colour (columns). Top: median radial offset of the measured positions from Gaia, after the DCR and CCD corrections. Middle: the shift predicted by the smooth lateral-colour model (equation~\ref{eq:lateral}). Bottom: the residual after the lateral-colour correction. Before correction, blue and red stars are displaced in opposite directions, increasingly towards the edge of the field; the model reproduces this pattern and the correction removes it. The dotted pattern on the CCD grid in the middle colour bin is present before and after the correction and is not a lateral-colour effect.}
+    \caption{Lateral colour across the DECam focal plane in the $g$ band, for Gaia stars in three bins of $g-i$ colour (columns). Top: median radial offset of the measured positions from Gaia, after the DCR and CCD corrections. Middle: the shift predicted by the smooth lateral-colour model (equation~\ref{eq:lateral}). Bottom: the residual after the lateral-colour correction. Before correction, blue and red stars are displaced in opposite directions, increasingly towards the edge of the field; the model reproduces this pattern and the correction removes it. A colour-independent residual of a few mas, the same in all three colour bins, remains (the exposure zero points of Section~\ref{sec:zeropoints} remove its CCD-to-CCD part). The dotted pattern on the CCD grid in the middle colour bin is present before and after the correction and is not a lateral-colour effect.}
     % Made with run/err-plots.ipynb
     \label{fig:lateral}
 \end{figure*}
@@ -509,7 +509,7 @@ Our initial step involved creating a distortion map for each CCD in the DECam in
     \label{fig:ringmaps_fp}
 \end{figure*}
 
-Figure~\ref{fig:dcr} shows the offsets of Gaia stars along the direction to the zenith, before and after the DCR correction \todo{state number of bricks / measurements used}. As expected from Equation~\ref{eq:dcr}, before correction the offset grows with airmass and with the colour difference from the reference stars, and it has opposite signs for stars redder ($c > 0$) and bluer ($c < 0$) than the reference. Stars with colours close to the reference colour ($c \approx 0$) are barely displaced. After correction, the trend is largely removed, with small residuals remaining at the highest airmasses.
+Figure~\ref{fig:dcr} shows the offsets of Gaia stars along the direction to the zenith, before and after the DCR correction, for 15.7 million $r$-band measurements of Gaia stars in eight RA slices spread over 0--63\degr. As expected from Equation~\ref{eq:dcr}, before correction the offset grows with airmass and with the colour difference from the reference stars, and it has opposite signs for stars redder ($c > 0$) and bluer ($c < 0$) than the reference. Stars with colours close to the reference colour ($c \approx 0$) are barely displaced. After correction, the trend is largely removed, with small residuals remaining at the highest airmasses.
 
 \begin{figure}
     \centering
@@ -533,9 +533,25 @@ The catalogue covers RA 0--63\degr\ at all declinations observed by DECam in DR1
     \label{fig:footprint}
 \end{figure*}
 
+\subsection{Completeness and added value} \label{sec:res_completeness}
+
+Figure~\ref{fig:completeness} compares the number of point sources with proper motions from us and from Gaia, over the 5\,093\,deg$^2$ of the catalogue. Gaia DR3 provides proper motions for 17.3 million of the sources in our footprint and positions only (a two-parameter solution) for a further 3.8 million. Gaia's counts fall steeply beyond $r \approx 20.5$; ours continue to rise. From $r = 20.9$ onwards, more of our clean point sources have proper-motion uncertainties below 10\,mas\,yr$^{-1}$ than Gaia has sources with any proper motion, and at $r > 21$ we provide 17.0 million such proper motions against Gaia's 0.53 million (8.5 million of ours have uncertainties below 5\,mas\,yr$^{-1}$).
+
+We also add proper motions for sources that Gaia detects but does not measure. Of the 3.6 million Gaia sources with only a two-parameter solution, 1.44 million (40\%) have a clean proper motion from us, with a median uncertainty of 1.8\,mas\,yr$^{-1}$ (91\% below 5\,mas\,yr$^{-1}$); they are mostly faint (median $G = 21.0$). Most of the rest are not point sources in the Tractor model, as expected for Gaia sources without an astrometric solution, which are often close pairs or galaxies.
+
+Conversely, we measure proper motions for 94.6\% of the Gaia sources that have one in Gaia; of the rest, 1.4\% are not point sources in the Tractor model and 4.0\% are point sources without a fit (fewer than three measured epochs, or no measurements at all) \todo{check why: duplicates in brick overlaps whose measured copy is in a missing brick?}. For $17 < G < 20.5$, 65--68\% of these are clean. The other 31\% are flagged mainly because of the time sampling (\texttt{SHORT\_BASELINE} 17\%, \texttt{FEW\_EPOCHS} 14\%), and less often for a missing colour (7\%), a nearby bright star (6\%), bad epochs (5\%) or saturation (1\%); a star can carry several flags. No star brighter than $G = 16$ is clean: the Tractor bright-star mask covers every Gaia star brighter than $G = 16$ itself, so all of them carry the \texttt{BRIGHT} flag. Their proper motions are in the catalogue, but Gaia's are far more precise at these magnitudes.
+
+\begin{figure*}
+    \centering
+    \includegraphics[width=\textwidth]{plots/completeness_vs_gaia.pdf}
+    \caption{Proper motions from this catalogue and from Gaia DR3 over RA 0--63\degr. Left: number of point sources per deg$^2$ per magnitude as a function of $r$: Gaia sources with and without a Gaia proper motion, and our proper motions (all, clean, and clean with uncertainties below 10 and 5\,mas\,yr$^{-1}$). Right: fraction of Gaia sources, with and without a Gaia proper motion, that have a proper motion from us (any, and clean), as a function of Gaia $G$. The drop of the clean fractions at $G < 16$ is the bright-star flag, which covers every Gaia star brighter than $G = 16$.}
+    % Made with run/completeness.ipynb
+    \label{fig:completeness}
+\end{figure*}
+
 \subsection{Comparison with Gaia} \label{sec:res_gaia}
 
-Gaia stars provide a direct test of our proper motions over $16 \la G \la 21$. Figure~\ref{fig:pm_vs_gaia} compares the two for clean Gaia stars: our proper motions follow Gaia's over the full range, out to $\pm 150$\,mas\,yr$^{-1}$, with no visible trend or offset. Over all 10.7 million clean Gaia stars with a full Gaia astrometric solution, the median difference (ours minus Gaia) is $-0.008$\,mas\,yr$^{-1}$ in right ascension and $+0.003$\,mas\,yr$^{-1}$ in declination, a consequence of tying every exposure to Gaia (Section~\ref{sec:zeropoints}). The robust scatter of the differences is 1.68 and 1.79\,mas\,yr$^{-1}$, and 1.42 and 1.53\,mas\,yr$^{-1}$ for $17 < G < 19$, where it is dominated by our errors rather than Gaia's. Only 0.10\% of clean Gaia stars differ from Gaia by more than 30\,mas\,yr$^{-1}$.
+Gaia stars provide a direct test of our proper motions over $16 \la G \la 21$. Figure~\ref{fig:pm_vs_gaia} compares the two for clean Gaia stars: our proper motions follow Gaia's over the full range, out to $\pm 150$\,mas\,yr$^{-1}$, with no visible trend or offset. Over all 10.7 million clean Gaia stars with a full Gaia astrometric solution, the median difference (ours minus Gaia) is $-0.008$\,mas\,yr$^{-1}$ in right ascension and $+0.003$\,mas\,yr$^{-1}$ in declination, a consequence of tying every exposure to Gaia (Section~\ref{sec:zeropoints}). The robust scatter of the differences is 1.68 and 1.79\,mas\,yr$^{-1}$, and 1.42 and 1.53\,mas\,yr$^{-1}$ for $17 < G < 19$, where it is dominated by our errors rather than Gaia's. Only 0.10\% of clean Gaia stars differ from Gaia by more than 30\,mas\,yr$^{-1}$; they form the faint vertical streak at small Gaia proper motions in Figure~\ref{fig:pm_vs_gaia}, which appears at small Gaia proper motions because that is where most stars are.
 
 \begin{figure*}
     \centering
@@ -567,7 +583,7 @@ Figure~\ref{fig:pulls} shows the distribution of the differences from Gaia divid
 
 \subsection{Parallaxes} \label{sec:res_parallax}
 
-Because the Legacy Surveys observe each field at similar times of year, the parallactic ellipse is poorly sampled, and our parallaxes are much less precise than our proper motions (Figure~\ref{fig:parallax}). For clean Gaia stars the median uncertainty is $\sim\!4$\,mas, and the robust scatter about Gaia's parallaxes 4.2--4.6\,mas for $16 < G < 19.5$, rising to $\sim\!7$\,mas at $G \approx 21$. The median difference from Gaia is $-0.05$\,mas, with no trend with magnitude. These parallaxes can identify very nearby objects (a $3\sigma$ detection needs $\varpi \ga 12$\,mas, i.e.\ within $\sim\!100$\,pc), but are not useful for most stars; we include the five-parameter fit mainly so that a parallax does not bias the proper motions of nearby stars.
+Because the Legacy Surveys observe each field at similar times of year, the parallactic ellipse is poorly sampled, and our parallaxes are much less precise than our proper motions (Figure~\ref{fig:parallax}). For the 10.7 million clean Gaia stars the median quoted uncertainty is 3.6\,mas (2.9\,mas for $16 < G < 18.5$, rising to 4.9\,mas at $G \approx 20.7$), and the robust scatter about Gaia's parallaxes is 3.7--4.1\,mas for $16 < G < 19$, rising to 5.8\,mas at $G \approx 20.7$, consistent with the parallax pull width of 1.17. The median difference from Gaia is $-0.05$\,mas, between $-0.02$ and $-0.08$\,mas at all magnitudes. These parallaxes can identify very nearby objects (a $3\sigma$ detection needs $\varpi \ga 11$\,mas, i.e.\ within $\sim\!90$\,pc), but are not useful for most stars; we include the five-parameter fit mainly so that a parallax does not bias the proper motions of nearby stars.
 
 \begin{figure*}
     \centering
