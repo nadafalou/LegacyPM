@@ -7,6 +7,7 @@ Same definitions and selection as run/dcr-plots.ipynb (F3), but without brick_DC
 reference colour is looked up with a sorted-key search, so tens of millions of epochs fit in memory.
 """
 import os
+import functools
 import numpy as np
 import fitsio
 
@@ -23,6 +24,7 @@ def _key(expnum, ccd_index):
     return expnum.astype(np.int64) * 256 + ccd_index
 
 
+@functools.lru_cache(maxsize=1)
 def ccd_reference_colour():
     """Sorted (keys, (g-i)_ref, ccdname -> index map) for every DR10 CCD/exposure."""
     C = fitsio.read(CCD_TABLE, columns=['expnum', 'ccdname', 'ccdbprp'])
