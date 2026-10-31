@@ -90,6 +90,10 @@ Headline numbers (full sample; `legacypm-catalogue-v2/diag/results_numbers.py`, 
       r 3.5 -> 1.0, i 1.6 -> 0.9, z 0.9 -> 0.9. DECIDED (Nada, 2026-10-31): not worth a rerun; keep the
       caution in the Discussion. Candidate fix for the full-sky run: per-band c_min as above, correct all colours.
 
+- [ ] Lateral-colour figure (fig:lateral): explore the isolated dark (very high / low) hexagons in a regular pattern on the
+      CCD grid, strongest in the middle colour bin, before AND after the correction. Outliers? Hexes straddling chip gaps
+      (few epochs, only edge pixels with edge distortions)? Check epochs per hex and CCD-edge distance (Nada 2026-11-01).
+
 ### 4. Questions for Dustin
 - [ ] Source of (g-i) = -0.56 + 1.34 (BP-RP) (paper \todo).
 - [ ] Which Gaia release / reference epoch the CP astrometry used per survey (could explain the -0.20 / +0.12 mas/yr
