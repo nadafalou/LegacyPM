@@ -26,15 +26,18 @@ Headline numbers (analysis sample; `legacypm-catalogue-v2/diag/results_numbers.p
 ## Remaining work
 
 ### Paper
-- [~] Colour-conversion check (`run/colour-conversion-check.ipynb`, job queued 2026-11-01): own fit of g-i vs BP-RP on 8
-      slices, residuals vs BP-RP / G / E(B-V), and per CCD-exposure median g-i vs the reference colour. Then update the
-      DCR-section sentence ("-0.57 + 1.36, within 0.08 mag for BP-RP < 2.5" is from the old slice-000 check, H5).
-- [~] Lateral-colour figure rerun with the measured-epoch fix (job queued): check the spots are gone, then delete the
-      caption sentence about the "dotted pattern on the CCD grid".
-- [ ] pos_err_vs_mag: the Legacy-Surveys-only cloud stops flat at ~200 mas for r > 24 -- data, not axis. Explain in the
-      caption or find the cause (Tractor cap? PM-sample selection?). Waiting for Nada.
-- [ ] I3 (James): one sentence in sec:res_gaia that the net pmra > 0 / pmdec < 0 of Gaia stars in the sample is Galactic
-      structure + solar reflex, not a systematic.
+- [x] Colour-conversion check (2026-11-01, `run/colour-conversion-check.ipynb` -> run/plots/colour_conversion_check.pdf):
+      937k clean Gaia stars, 8 slices: own fit g-i = -0.555 + 1.338 (BP-RP) (adopted -0.56 + 1.34); median residuals
+      within 0.09 mag for BP-RP < 2.4, independent of G and E(B-V); up to -0.4 at BP-RP 3.3. CCD reference colours
+      (ccdbprp): 98% in 1.07-1.70, none > 2.4, where the relation is good to 0.07. Our stars' median g-i per
+      CCD-exposure is 0.21 redder than the reference colour (fainter, redder stars than the CP calibrators -- a sample
+      difference, not a test of the relation). Paper sentence updated.
+- [x] Lateral-colour figure rerun (2026-11-01): spots gone; caption sentence about the dotted pattern removed.
+- [x] pos_err_vs_mag flat top (2026-11-01): detection limit -- same ceiling (99th pct 179 / 198 mas at r 24-25 / 25-26)
+      for all primary Tractor PSF sources, with or without a PM; sigma ~ FWHM / (2.35 S/N) at the ~6 sigma threshold.
+      Explained in the fig:pos_err caption.
+- [x] I3 (James, 2026-11-01): sec:res_gaia -- median Gaia PM of clean Gaia stars (+4.0, -2.5) mas/yr, (+4.9, -3.0) at
+      G 16-18 to (+3.4, -2.3) at G 20-21: solar reflex + Galactic rotation, smaller for distant stars; not a systematic.
 - [ ] Data release: where and in what form (two \todo's: sec:columns, Conclusions). Needs Dustin.
 - [ ] Abstract (last, per Dustin).
 - [ ] Nada: finish reading from Section 6 on.
