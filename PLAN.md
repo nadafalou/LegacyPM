@@ -1,119 +1,66 @@
 # LegacyPM progress tracker
 
-Last updated: 2026-10-29. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked.
-Cleaned up 2026-10-29: finished work is summarised under "Done"; the full step-by-step history (old item numbers
-A1-A10, B, C, D, E, F, H, I) is in git (`git show f2b9252:PLAN.md`).
+Last updated: 2026-11-01. Status keys: [x] done · [~] in progress · [ ] todo · [!] blocked.
+Finished work is summarised under "Done"; step-by-step history is in git (`git show f2b9252:PLAN.md` for the
+pre-2026-10-29 tracker, `git log -p PLAN.md` after).
 
 ## Where things stand
-RA 000-063 is processed with the final pipeline (v2 run + error model v3 + exposure zero points): 81,491 bricks,
-0 failed, every catalogue on ERRMODEL 5121325b / ZPTABLE 93045419720. Output: `/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/`
-(per-slice bricks, `combined/`, `slurm-logs/`). tractor-pm files and `combined/` copied to CFS
-`/global/cfs/cdirs/cosmo/work/users/nelfalou/legacypm-catalogue-v2/` (2026-10-29/30); `forced-*` files only on pscratch.
-Paper (`writeup/main.tex`) has methods, results and an application section; it builds cleanly (18 pp).
+RA 000-063 (the paper's analysis sample) is processed with the final pipeline (v2 run + error model v3 + exposure zero
+points): 81,491 bricks, 0 failed, every catalogue on ERRMODEL 5121325b / ZPTABLE 93045419720. Output:
+`/pscratch/sd/n/nelfalou/legacypm-catalogue-v2/` (per-slice bricks, `combined/`, `slurm-logs/`); tractor-pm files and
+`combined/` also on CFS `/global/cfs/cdirs/cosmo/work/users/nelfalou/legacypm-catalogue-v2/`; `forced-*` only on pscratch.
 
-Headline numbers (full sample; `legacypm-catalogue-v2/diag/results_numbers.py`, `paper_numbers.py`):
-- 266.0M PSF objects with PMs, 202.2M clean (pm_quality == 0, 76%), 12.2M clean Gaia stars; median 32 epochs over 4.8 yr;
-  r > 21 with sigma_PM < 2 / 5 / 10 mas/yr: 2.0M / 8.5M / 17.0M.
-- Clean Gaia stars (10.7M), ours - Gaia: mean -0.008 / +0.003 mas/yr; robust scatter 1.68 / 1.79 (G 17-19 1.42 / 1.53);
-  PM pulls 1.20 / 1.28 (reported, not rescaled -- Nada); parallax offset -0.05 mas, parallax pull 1.17; |dPM| > 30: 0.10%.
-- Per-axis per-epoch scatter after all corrections (bright clean Gaia stars): g 9.9, r 9.2, i 8.4, z 8.2 mas
-  (from 21.2 / 14.0 / 12.7 / 11.2); `writeup/tables/error_budget.tex`.
+Paper (`writeup/main.tex`, 22 pp, builds cleanly) is complete apart from the abstract and the data release. It is
+written as the catalogue of the whole DECam DR10 footprint, with RA 000-063 as the "analysis sample" (sec:res_catalogue).
+Nada has reviewed up to Section 6.
 
-## Remaining work (priority order)
+Headline numbers (analysis sample; `legacypm-catalogue-v2/diag/results_numbers.py`, `run/sample-stats.ipynb`):
+- 266.0M PSF objects with PMs, 202.2M clean (76%), 12.2M clean Gaia stars; median 32 epochs over 4.8 yr; images
+  2013-09 to 2021-08; 8.1 billion measurements in the fits. r > 21 with sigma_PM < 2 / 5 / 10 mas/yr: 2.0M / 8.5M / 17.0M.
+- Clean Gaia stars (10.7M), ours - Gaia: mean -0.008 / +0.003 mas/yr; robust scatter 1.68 / 1.79; PM pulls 1.20 / 1.28
+  (reported, not rescaled); parallax offset -0.05 mas, pull 1.17; |dPM| > 30: 0.10%.
+- Per-coordinate per-epoch scatter after all corrections: g 9.9, r 9.2, i 8.4, z 8.2 mas (from 21.2 / 14.0 / 12.7 /
+  11.2); systematic left 9.0 / 8.6 / 7.9 / 7.7 (tab:error_budget).
+- Quasars (DESI DR1, 126k): pulls 1.07-1.17 to r = 23.5; bias < 0.2 mas/yr at Dec < 0.
 
-### 1. Data safety
-- [x] tractor-pm + `combined/` on CFS (2026-10-30; 262 combined files, matches pscratch).
-- [ ] Ask Dustin about CFS space for the `forced-*` files (~120 GB per slice, ~8 TB); needed for per-epoch work and
-      `--redo-errors`.
+## Remaining work
 
-### 2. Validation still missing
-- [x] Q1 (2026-10-30). Quasar test (`run/qso-test.ipynb` -> writeup/plots/qso_pm.pdf; paper sec:res_qso, fig:qso).
-      DESI DR1 QSOs matched at 0.5": 126,448 clean non-Gaia, r < 23.5. Pulls 1.07-1.17 (PM), 1.06-1.11 (plx), flat to
-      r 23.5. Bias Dec < 0: |median| < 0.2 mas/yr; Dec > 10: -0.5..-4 (fainter = larger); plx -0.6..-1.6 everywhere.
-      Sign flips at z > 3 (pmdec +2.5, plx +1.5) -> quasar DCR (emission lines / Lya forest), not the frame: Gaia stars
-      at Dec > 10, G 19-21 agree with Gaia to 0.1 mas/yr. Optional: per-epoch confirmation (QSO offsets along the
-      refraction direction vs tan z by redshift; needs forced files, ~1 h compute).
-- [x] F12 (James; 2026-10-30) `run/completeness.ipynb` -> writeup/plots/completeness_vs_gaia.pdf (not yet in the paper).
-      22.8M unique Gaia sources (gaia-objects has 5.8% brick-overlap duplicates, brick_primary = False, never fitted;
-      de-duplicated by ref_id). Our clean sigma<10 counts exceed Gaia-with-PM counts from r = 20.9; r > 21: 17.0M (ours,
-      sigma<10) vs 0.53M (Gaia with PM). 1.44M Gaia sources without a Gaia PM get a clean PM from us (median sigma 1.8
-      mas/yr, 91% < 5; median G 21.0). We fit 94.6% of Gaia sources with a Gaia PM; clean 65-68% at G 17-20.5 (flagged
-      30.6%: SHORT_BASELINE 17.3, FEW_EPOCHS 14.0, NO_COLOUR 7.1, BRIGHT 5.9, BAD_EPOCHS 4.7, SAT 1.0); none clean at
-      G < 16 (Tractor MEDIUM mask marks every G < 16 Gaia star -> BRIGHT). In the paper: sec:res_completeness,
-      fig:completeness. Open \todo: why 4.0% of Gaia point sources have no fit (overlap duplicates of missing bricks?).
-- [x] C2 (2026-10-31) err-plots cell 27 -> run/plots/c2_dipole_zeropoints.pdf (8 slices, all colours). No left/right
-      dipole: outer-ring (R > 0.6 deg) dipole <= 0.35 mas in every band before the zero points, <= 0.3 after. What the
-      F5 'after' row shows is a colour-independent OUTWARD ring in g: +2.3 mas mean at R > 0.6 (edges up to ~5) after
-      the lateral step; the zero points reduce it to +0.3. r/i/z < 0.2. Lateral caption updated.
-- [x] 2026-10-30 Reviewed all paper figures: legends fixed (scatter_vs_mag, footprint, error_floor), labels
-      'statistical only' / 'full (error model)' in pm_errors; text fixed: pos_err numbers, DCR sample size, parallax
-      numbers (scatter 3.7-4.1 mas at G 16-19, 5.8 at 20.7; median error 3.6), pm_vs_gaia streak sentence, lateral
-      caption (colour-independent residual). Noted, not changed: g-band DCR model ~10 mas/tan z below the data at
-      c_rel < -1.2 (clip at -1.5; data flatten earlier).
-- [x] 2026-10-30 Discussion (sec:discussion: empirical corrections vs Bernstein's parametric maps; what limits the
-      accuracy -- turbulence, refraction-direction excess, g metallicity DCR, quasar DCR, correlated errors, faint
-      S/N < 15 underestimate; comparison with other catalogues; extending to the full footprint; lessons for LSST) and
-      Conclusions (sec:conclusions). New \todo's: white-dwarf DCR check, NSC citation/comparison, data-release sentence.
+### Paper
+- [~] Colour-conversion check (`run/colour-conversion-check.ipynb`, job queued 2026-11-01): own fit of g-i vs BP-RP on 8
+      slices, residuals vs BP-RP / G / E(B-V), and per CCD-exposure median g-i vs the reference colour. Then update the
+      DCR-section sentence ("-0.57 + 1.36, within 0.08 mag for BP-RP < 2.5" is from the old slice-000 check, H5).
+- [~] Lateral-colour figure rerun with the measured-epoch fix (job queued): check the spots are gone, then delete the
+      caption sentence about the "dotted pattern on the CCD grid".
+- [ ] pos_err_vs_mag: the Legacy-Surveys-only cloud stops flat at ~200 mas for r > 24 -- data, not axis. Explain in the
+      caption or find the cause (Tractor cap? PM-sample selection?). Waiting for Nada.
+- [ ] I3 (James): one sentence in sec:res_gaia that the net pmra > 0 / pmdec < 0 of Gaia stars in the sample is Galactic
+      structure + solar reflex, not a systematic.
+- [ ] Data release: where and in what form (two \todo's: sec:columns, Conclusions). Needs Dustin.
 - [ ] Abstract (last, per Dustin).
-- [ ] Sample description: imaging date range, N_epoch / baseline distributions, numbers of bricks and measurements
-      (three \todo's).
-- [ ] Data release: where and in what form (Dustin) -> sec:columns \todo.
-- [ ] I2 (James). Science case for PMs at 22-25 mag (with F12). I3: say that the net pmra > 0 / pmdec < 0 of Gaia stars
-      here is Galactic structure + solar reflex, not a systematic.
-- [ ] Verify against ADS every bib entry typed from memory: Hog2000, Monet2003, Bramich2008, Munn2004, Tian2017;
-      Bergeron1995, Bedard2020, GentileFusillo2021, Harris2006, DESI2016, Luyten1922, SalimGould2002, LepineShara2005,
-      Oppenheimer2001, Kilic2006, Munn2017, Smith2009; DESI_DR1, Koposov2024, Kaczmarczik2009.
-- [ ] Remaining \todo's: SDSS depth, J depths, DR10 point-source depth; \dstn: LSST DM pipeline paper on PMs.
-- [ ] Consistency pass over the older sections (Introduction, Existing Data, Data Catalogs).
-- [ ] Nada: read the whole draft.
+- [ ] Nada: finish reading from Section 6 on.
+- [ ] Commit outstanding work (err-plots dark-spot + C2 cells, regenerated figures, paper edits, this file).
 
-### Paper progress 2026-10-31
-- [x] Sample description (sec:res_catalogue): 2013-09 to 2021-08 (mostly 2014-2018); 8.1 billion measurements in fits
-      (6.6 billion clean); bands g/r/i/z 26/28/21/25% (Gaia stars). run/sample-stats.ipynb.
-- [x] Science case for faint PMs (Introduction): text only.
-- [x] Dustin's point (sec:res_completeness): within Gaia's range we add little -- r < 20: +0.7% (47k, 91% Gaia 2-param,
-      45% moving > 5 sigma vs 51% for Gaia stars); r 20.5-21: +39%; r < 21: +6.7%.
-- [x] 4.2% unfitted Gaia point sources: 36% 1-2 epochs, 55% >= 3 epochs over too short a span (mostly one night),
-      9% no measurements (1/6 of those in missing bricks).
-- [x] White-dwarf DCR (run/wd-dcr.ipynb; 18,626 Gaia WDs): g residual differs by 2-6 mas/tan z, r up to 3, i/z < 1.
-      38% of WD epochs have -2 < c_rel < -1.5 (clipped: 4-10 mas/tan z left in g); 11% have c_rel < -2 (NO DCR
-      correction: ~70 mas/tan z in g, 20 r, 8 i, 2 z). In the Discussion as a caution. Decided: not fixed for this paper.
-- [x] Literature todos: SDSS (Abazajian2009), NIR depths (UKIDSS LAS J 19.5/19.9), DR10 depths (g 24.9, r 24.4, i 24.0,
-      z 23.4 from survey-bricks-dr10-south), DECam area 22,900 deg^2, survey-table row, Rubin DP2 (RubinDP2), NSC
-      (Nidever2021). New bib entries to verify: Abazajian2009, Nidever2021, RubinDP2.
-- [ ] Remaining \todo's need Dustin: colour-transformation source, CP Gaia release/epoch, data release (x2). Abstract.
-- [x] 2026-10-31 Appendix moves + trimming done (main ~11.1k words, 14 figs, 5 tables; appendices A columns, B corrections
-      validation, C error-model calibration, D WD vetting). Backup of the pre-restructure text in the session scratchpad.
-- [x] DCR blue extension (not applied) (run/dcr-blue-extension.ipynb -> run/plots/dcr_blue_extension.pdf): raw DCR keeps rising
-      bluewards of c_rel = -1.5. Best per-band clip c_min: g -1.90, r -2.40, i -1.85, z -1.50 (no change), applied to
-      ALL colours (drop brick_DCR's -2 < c < 3 cut). Residual rms of binned medians at c < -1 (mas / tan z): g 13.1 -> 2.0,
-      r 3.5 -> 1.0, i 1.6 -> 0.9, z 0.9 -> 0.9. DECIDED (Nada, 2026-10-31): not worth a rerun; keep the
-      caution in the Discussion. Candidate fix for the full-sky run: per-band c_min as above, correct all colours.
+### Questions for Dustin
+- [ ] Data release (where, what form).
+- [ ] CFS space for the `forced-*` files (~120 GB per slice, ~8 TB for the sample); needed for per-epoch work and
+      `--redo-errors`.
+- [ ] Missing bricks (`missing_bricks.txt`: all of 058-059 + 557 gaps in 000-057); forced photometry for 064-359.
 
-- [ ] Lateral-colour figure (fig:lateral): explore the isolated dark (very high / low) hexagons in a regular pattern on the
-      CCD grid, strongest in the middle colour bin, before AND after the correction. Outliers? Hexes straddling chip gaps
-      (few epochs, only edge pixels with edge distortions)? Check epochs per hex and CCD-edge distance (Nada 2026-11-01).
-
-### 4. Questions for Dustin
-- [ ] Source of (g-i) = -0.56 + 1.34 (BP-RP) (paper \todo).
-- [ ] Which Gaia release / reference epoch the CP astrometry used per survey (could explain the -0.20 / +0.12 mas/yr
-      zero-point drift; paper \todo).
-- [ ] Missing bricks (`missing_bricks.txt`: all of 058-059 + 557 gaps in 000-057); CFS space (above); data release.
-
-### 5. Housekeeping
-- [ ] Commit outstanding work (James's checks, paper, this file).
+### Housekeeping
 - [ ] Delete test output: `/pscratch/sd/n/nelfalou/healthcheck/`, scratch texbuild dirs (Claude's rm is blocked).
 - [ ] Low priority: MongoDB login for FireWorks (superseded by slurm/).
 
-### 6. After this paper
-- [ ] Paper is written as the whole DECam catalogue (2026-10-30, Nada: will run the remaining sky; RA 0-63 wording
-      removed). After the full run, update every number from the processed area: footprint (81,491 bricks, ~5,000 /
-      5,093 deg^2, Dec range, RA 58-60 gap + SMC in fig:footprint caption), 266.0M / 202.2M / 12.2M / 10.7M, median
-      epochs/baseline, error budget, Gaia comparison, pulls, parallaxes, quasar test, completeness, conclusions; the
-      calibration sample sizes (80M DCR, 294M CCD maps, 3.15M zero points) if the models are refit. Marked by a
-      '% NOTE' comment at sec:res_catalogue.
-- [ ] RA 064-359: needs Dustin's forced photometry (inputs stop at 069). Two-pass procedure in RUNBOOK section 5
-      (tested on 064-069). Recheck pulls (error model fitted on slices 000/040) and the maps on new Dec / airmass.
+### After this paper
+- [ ] Full sky (RA 064-359): needs Dustin's forced photometry (inputs stop at 069). Two-pass zero points (RUNBOOK
+      section 5, tested on 064-069). Recheck pulls (error model fitted on slices 000/040) at new Dec / airmass.
+- [ ] Then update the paper: full-catalogue totals in Section 2 (footprint 366,912 bricks / 22,900 deg^2 already there),
+      survey-table N, Conclusions. Sample numbers in sec:res_catalogue stay unless the analysis is redone on more sky;
+      calibration sample sizes (80M DCR, 294M CCD maps, 3.15M zero points) only if the models are refit. Marked by
+      '% NOTE' comments in main.tex.
+- [ ] Candidate fix for the full-sky run: DCR for blue objects -- per-band clip c_min g -1.90, r -2.40, i -1.85, z -1.50,
+      applied to all colours (drop brick_DCR's -2 < c < 3 cut); residual at c < -1: g 13.1 -> 2.0, r 3.5 -> 1.0 mas/tan z
+      (`run/dcr-blue-extension.ipynb`). Would fix hot white dwarfs (11% of their epochs get no DCR correction now).
+- [ ] Optional: per-epoch confirmation of quasar DCR (QSO offsets along the refraction direction vs tan z by redshift).
 - [ ] High-PM / non-Gaia candidates; science extensions (`EXTENSIONS_BRIEF.md`, `application/`).
 
 ## Decisions (Nada unless noted)
@@ -122,44 +69,46 @@ Headline numbers (full sample; `legacypm-catalogue-v2/diag/results_numbers.py`, 
   > 5 sigma; g-i fallback from g-z only; Dec-ivar bug handled by DDIVFIX > INPDATE > data.
 - 2026-10-26: error model v3 (isotropic + along-refraction terms); exposure zero points adopted; no PM-level floor --
   report the pull widths instead.
-- 2026-10-29: g-band DCR metallicity dependence documented as a limitation, not corrected (no metallicity for most stars).
+- 2026-10-29: g-band DCR metallicity dependence documented as a limitation, not corrected.
+- 2026-10-30: paper presents the whole DECam catalogue; 2026-11-01: RA 000-063 named the "analysis sample".
+- 2026-10-31: DCR for blue objects (white dwarfs) not fixed for this paper -- not worth a rerun; caution in the Discussion.
+- 2026-10-31: validation details moved to appendices A-D; equations centred (fleqn removed, 2026-11-01).
 
 ## Done (summary; details in git history)
-- Pipeline: DCR two-line model (`dcr_model_twoline.json`, held-out cell wRMS g 1.25, r 0.55, i 0.42, z 0.43 mas); CCD
-  maps rebuilt from 294M Gaia epochs (`ringmaps-dr10.fits`, 16-px bins, remove 6-8 mas per axis; 2024 maps had added
-  9 mas in g); smooth lateral-colour model (`lateral_model_poly3.json`, c0 = 1.469); exposure-CCD zero points (3.15M
-  CCD-exposures, jitter 2.2 / 4.2 mas RA / Dec, frame drift -0.20 / +0.12 mas/yr removed); error model v3
-  (`error_model.json`); measured epochs only; objid clashes keyed on (brickid, objid); fitsio rewrite of --redo-errors
-  (memory leak fixed); new-sky two-pass zero points (ZPFRAC card, LEGACYPM_ZP_TABLE, redo_errors.sbatch).
-- Input bug: forced-photometry Dec ivars too large by 1/cos^2(Dec) before legacypipe 7aece157; corrected in the
-  lateral step (DECFIX / DECBASIS / DECRATIO headers). Faint-star pulls 0.90-1.02 in both axes afterwards.
-- Investigations for James / Dustin:
-  * H1 outliers in ours vs Gaia: explained by identifiable conditions (short baseline, saturation, bright mask, few
-    epochs, no colour, unmeasured epochs) -> pm_quality flags; clean |dPM| > 30 now 0.10%.
-  * H2 per-stage plots measure different things (not a bug). H3 error budget (tab:error_budget, fig:error_floor).
-  * H4 Dec > RA errors: extra scatter along the refraction direction, mostly N-S from CTIO -> the along term of v3.
-  * H5 reference colour definition checked (median BP-RP of CP calibrators per CCD-exposure).
-  * H6 colour modes are two field populations; kinematically hot and cold stars share the DCR curve.
-  * H7 (2026-10-29) DCR vs DESI DR1 spectra (`run/dcr-spectra.ipynb`; 127,773 stars, 3.75M epochs): blue mode = turnoff
-    dwarfs incl. a halo component ([Fe/H] ~ -1.5), red mode = K/M dwarfs ([Fe/H] ~ -0.3). r/i/z: no metallicity or
-    log g dependence at fixed colour. g, blue stars: after DCR, [Fe/H] > -0.5 left with +6..+8 mas/tan z, < -1.2 with
-    -1..-2 (~20% of the DCR there). In the paper (sec:dcr).
-  * H8 (2026-10-29) CCD-map medians (`run/ringmap-residuals.ipynb`): per-bin medians of held-out bricks 7-12 mas rms
-    before, 3.2-5.7 after = noise within 1 mas, median 0.00 +- 0.04; 2024 maps leave 20-25 mas rms
-      (but robust widths 4.0-5.6 in r/i/z, better than none: right in the core, a few wildly wrong bins; g worse, 8.6-11.6).
-      Robust widths: before 5.4-8.6, after 2.8-4.9 = noise prediction within 0.05 mas. Plots: linear + _log. In the paper (sec:ccd).
-- Paper: methods rewritten for the current pipeline (DCR, CCD maps, lateral colour, zero points, uncertainties, flags,
-  columns); results (corrections, catalogue, Gaia comparison, uncertainties, parallaxes); application section
-  (reduced proper motion diagram beyond Gaia, white-dwarf candidates; `run/rpm-diagram.ipynb`, `application/`);
-  all \figtodo's resolved; Dustin's comments resolved except the abstract and the LSST DM paper.
-- Docs: RUNBOOK.md (rewritten 2026-10-29), README.md, CLAUDE.md current; new-sky health check on 064-069 (no failures
-  once the two-pass zero points are used: ZPFRAC median 0.9996).
+- Pipeline: two-line DCR (`dcr_model_twoline.json`); CCD maps rebuilt from 294M Gaia epochs (`ringmaps-dr10.fits`,
+  16-px bins); smooth lateral-colour model (`lateral_model_poly3.json`, c0 = 1.469); exposure-CCD zero points (3.15M
+  CCD-exposures, drift -0.20 / +0.12 mas/yr removed); error model v3 (`error_model.json`); measured epochs only;
+  objid clashes keyed on (brickid, objid); fitsio --redo-errors; new-sky two-pass zero points (ZPFRAC,
+  LEGACYPM_ZP_TABLE, redo_errors.sbatch). Input Dec-ivar bug corrected (DECFIX headers).
+- Validation and investigations (notebooks in run/):
+  * H1 outliers -> pm_quality flags; H2 per-stage plots; H3 error budget (now one row per band with what remains);
+    H4 refraction-direction excess -> v3 along term; H5 reference colour = median BP-RP of CP calibrators;
+    H6 colour modes = two populations.
+  * H7 DCR vs DESI DR1 spectra (`dcr-spectra`): g-band metallicity dependence for blue stars (~20% of the DCR) -> App. B.
+  * H8 CCD-map per-bin check (`ringmap-residuals`): after = noise (rms within 1 mas, robust width within 0.05 mas).
+    2024 maps: right in the core in r/i/z, wildly wrong in a few bins, worse in g.
+  * Q1 quasar test (`qso-test`): pulls 1.07-1.17; northern bias is quasar DCR (sign flips at z > 3), not the frame.
+  * F12 completeness (`completeness`): our clean sigma<10 PMs exceed Gaia's from r = 20.9; +1.44M first PMs for Gaia
+    2-parameter sources; within Gaia's range we add little (+0.7% at r < 20, +6.7% at r < 21). gaia-objects has 5.8%
+    brick-overlap duplicates (dedup by ref_id). 4.2% of Gaia point sources unfitted (1-2 epochs / one night / missing).
+  * Pulls figure: core Gaussian (robust width), excess in tails; small-PM stars same; sigma_mu >= 2.5: 1.06 / 1.16.
+  * C2: no focal-plane dipole (<= 0.4 mas); g edge ring +2.3 mas after lateral, +0.3 after zero points.
+  * White dwarfs (`wd-dcr`, 18,626): DCR residuals 2-6 mas/tan z in g; 38% of WD epochs clipped, 11% uncorrected.
+  * Lateral-colour figure dark spots: plotting bug -- unmeasured epochs (13.5% in g) have junk fitted pixel positions
+    that collapse to ~one focal-plane point per CCD. Pipeline unaffected; fixed in err-plots cell 15.
+  * Sample statistics (`sample-stats`); new-sky health check on 064-069.
+- Paper: all methods, results, application (reduced proper motion diagram), Discussion, Conclusions, science case,
+  roadmap paragraph, appendices A-D; figures reviewed and restyled (pulls with log row, pos_err to r = 26, legends);
+  literature todos resolved (SDSS, NIR depths, DR10 depths, Rubin DP2, NSC); Dustin's answers in (colour conversion =
+  empirical fit; CP astrometry on Gaia DR2, legacypipe refits on EDR3); all bib entries verified by Nada.
+- Docs: RUNBOOK.md, README.md, CLAUDE.md current.
 
 ## Data notes
 - Inputs for 000-063: 81,491 of 84,358 DR10 bricks (Dustin pscratch `forced-motions-dr10/forced-brick/` for 020-023,
   051-069; Dustin CFS for 000-057; our corrected archive for 548 bricks of 060-063). Missing: 058-059 and 557 gaps
   (`missing_bricks.txt`). Nothing exists beyond slice 069.
-- Imaging date range of the archive sample: 2013-11-09 to 2021-03-26 (re-measure for the full sample for the paper).
+- DR10 DECam footprint: 366,912 bricks, 22,900 deg^2, Dec -90 to +36 (`survey-bricks-dr10-south.fits.gz`); median 5-sigma
+  PSF depths g 24.9, r 24.4, i 24.0, z 23.4.
 - Calibration-model fits (ringmap_build, dcr-polyfit, colour-fallback, lateral-model-dr10) read the v1 combined files
   (`pm_analysis.V1_COMBINED_DIR`) so the adopted models stay reproducible; everything else reads v2.
 - Old maps kept for reference on CFS `ls-motions/{rm,lm}-corrected-forced-motions/` (ringmaps.fits Apr 2024,
