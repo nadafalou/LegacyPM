@@ -39,7 +39,7 @@ Headline numbers (analysis sample; `legacypm-catalogue-v2/diag/results_numbers.p
 - [x] I3 (James, 2026-11-01): sec:res_gaia -- median Gaia PM of clean Gaia stars (+4.0, -2.5) mas/yr, (+4.9, -3.0) at
       G 16-18 to (+3.4, -2.3) at G 20-21: solar reflex + Galactic rotation, smaller for distant stars; not a systematic.
 - [ ] Data release: where and in what form (two \todo's: sec:columns, Conclusions). Needs Dustin.
-- [ ] Abstract (last, per Dustin).
+- [x] Abstract (2026-11-01; ~245 words, MNRAS limit 250).
 - [ ] Nada: finish reading from Section 6 on.
 - [ ] Commit outstanding work (err-plots dark-spot + C2 cells, regenerated figures, paper edits, this file).
 
